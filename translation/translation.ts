@@ -550,7 +550,7 @@ parser.addArgument('--logDir', {
 });
 parser.addArgument('--logUpdateFreq', {
   type: 'string',
-  defaultValue: 'batch',
+  defaultValue: 'epoch',
   optionStrings: ['batch', 'epoch'],
   help: 'Frequency at which the loss values will be logged to ' +
   'tensorboard.'
