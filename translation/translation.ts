@@ -34,7 +34,6 @@ import readline from 'readline';
 import mkdirp from 'mkdirp';
 
 const {zip} = require('zip-array');
-const invertKv = require('invert-kv');
 
 import * as tf from '@tensorflow/tfjs';
 
@@ -102,6 +101,9 @@ async function readData (dataFile: string) {
   console.log('Max sequence length for inputs:', maxEncoderSeqLength);
   console.log('Max sequence length for outputs:', maxDecoderSeqLength);
 
+  const inputTextValidation = inputTexts.splice(Math.ceil(inputTexts.length * 0.9));
+  const targetTextsValidation = targetTexts.splice(Math.ceil(targetTexts.length * 0.9));
+
   const inputTokenIndex = inputCharacterList.reduce(
     (prev, curr, idx) => (prev[curr] = idx, prev),
     {} as {[char: string]: number},
@@ -131,45 +133,119 @@ async function readData (dataFile: string) {
   fs.writeFileSync(metadataJsonPath, JSON.stringify(metadata));
   console.log('Saved metadata at: ', metadataJsonPath);
 
-  const encoderInputDataBuf = tf.buffer<tf.Rank.R3>([
-    inputTexts.length,
-    maxEncoderSeqLength,
-    numEncoderTokens,
-  ]);
-  const decoderInputDataBuf = tf.buffer<tf.Rank.R3>([
-    inputTexts.length,
-    maxDecoderSeqLength,
-    numDecoderTokens,
-  ]);
-  const decoderTargetDataBuf = tf.buffer<tf.Rank.R3>([
-    inputTexts.length,
-    maxDecoderSeqLength,
-    numDecoderTokens,
-  ]);
+  function* dataX() {
+    for (
+        const [, [inputText, targetText]]
+        of (zip(inputTexts, targetTexts).entries() as IterableIterator<[number, [string, string]]>)
+        ) {
+      const encoderInputDataBuf = tf.buffer<tf.Rank.R2>([
+        maxEncoderSeqLength,
+        numEncoderTokens,
+      ]);
 
-  for (
-    const [i, [inputText, targetText]]
-    of (zip(inputTexts, targetTexts).entries() as IterableIterator<[number, [string, string]]>)
-  ) {
-    for (const [t, char] of inputText.split('').entries()) {
-      // encoder_input_data[i, t, input_token_index[char]] = 1.
-      encoderInputDataBuf.set(1, i, t, inputTokenIndex[char]);
-    }
+      const decoderInputDataBuf = tf.buffer<tf.Rank.R2>([
+        maxDecoderSeqLength,
+        numDecoderTokens,
+      ]);
 
-    for (const [t, char] of targetText.split('').entries()) {
-      // decoder_target_data is ahead of decoder_input_data by one timestep
-      decoderInputDataBuf.set(1, i, t, targetTokenIndex[char]);
-      if (t > 0) {
-        // decoder_target_data will be ahead by one timestep
-        // and will not include the start character.
-        decoderTargetDataBuf.set(1, i, t - 1, targetTokenIndex[char]);
+      for (const [t, char] of inputText.split('').entries()) {
+        encoderInputDataBuf.set(1, t, inputTokenIndex[char]);
       }
+
+      for (const [t, char] of targetText.split('').entries()) {
+        decoderInputDataBuf.set(1, t, targetTokenIndex[char]);
+      }
+
+      yield {
+        encoderInputs: encoderInputDataBuf.toTensor(),
+        decoderInputs: decoderInputDataBuf.toTensor(),
+      };
     }
   }
 
-  const encoderInputData = encoderInputDataBuf.toTensor();
-  const decoderInputData = decoderInputDataBuf.toTensor();
-  const decoderTargetData = decoderTargetDataBuf.toTensor();
+  function* dataY() {
+    for (
+        const [, [, targetText]]
+        of (zip(inputTexts, targetTexts).entries() as IterableIterator<[number, [string, string]]>)
+        ) {
+
+      const decoderTargetDataBuf = tf.buffer<tf.Rank.R2>([
+        maxDecoderSeqLength,
+        numDecoderTokens,
+      ]);
+      for (const [t, char] of targetText.split('').entries()) {
+        if (t > 0) {
+          decoderTargetDataBuf.set(1, t - 1, targetTokenIndex[char]);
+        }
+      }
+
+      yield tf.tidy(() =>decoderTargetDataBuf.toTensor());
+    }
+  }
+
+  const xs = tf.data.generator(dataX);
+  const ys = tf.data.generator(dataY);
+  const trainDs = tf.data
+      .zip({ xs, ys })
+      .shuffle(64 * 4)
+      .batch(64);
+
+  function* dataValidX() {
+    for (
+        const [, [inputText, targetText]]
+        of (zip(inputTextValidation, targetTextsValidation).entries() as IterableIterator<[number, [string, string]]>)
+        ) {
+      const encoderInputDataBuf = tf.buffer<tf.Rank.R2>([
+        maxEncoderSeqLength,
+        numEncoderTokens,
+      ]);
+
+      const decoderInputDataBuf = tf.buffer<tf.Rank.R2>([
+        maxDecoderSeqLength,
+        numDecoderTokens,
+      ]);
+
+      for (const [t, char] of inputText.split('').entries()) {
+        encoderInputDataBuf.set(1, t, inputTokenIndex[char]);
+      }
+
+      for (const [t, char] of targetText.split('').entries()) {
+        decoderInputDataBuf.set(1, t, targetTokenIndex[char]);
+      }
+
+      yield {
+        encoderInputs: encoderInputDataBuf.toTensor(),
+        decoderInputs: decoderInputDataBuf.toTensor(),
+      };
+    }
+  }
+
+  function* dataValidY() {
+    for (
+        const [, [, targetText]]
+        of (zip(inputTextValidation, targetTextsValidation).entries() as IterableIterator<[number, [string, string]]>)
+        ) {
+
+      const decoderTargetDataBuf = tf.buffer<tf.Rank.R2>([
+        maxDecoderSeqLength,
+        numDecoderTokens,
+      ]);
+      for (const [t, char] of targetText.split('').entries()) {
+        if (t > 0) {
+          decoderTargetDataBuf.set(1, t - 1, targetTokenIndex[char]);
+        }
+      }
+
+      yield tf.tidy(() =>decoderTargetDataBuf.toTensor());
+    }
+  }
+
+  const xsValid = tf.data.generator(dataValidX);
+  const ysValid = tf.data.generator(dataValidY);
+  const validDs = tf.data
+      .zip({ xs: xsValid, ys: ysValid })
+      .shuffle(64 * 4)
+      .batch(64);
 
   return {
     inputTexts,
@@ -179,9 +255,8 @@ async function readData (dataFile: string) {
     numDecoderTokens,
     inputTokenIndex,
     targetTokenIndex,
-    encoderInputData,
-    decoderInputData,
-    decoderTargetData,
+    validDs,
+    trainDs,
   };
 }
 
@@ -291,64 +366,64 @@ Returns:
   The result of the decoding (i.e., translation) as a string.
 """
 */
-async function decodeSequence (
-  inputSeq: tf.Tensor,
-  encoderModel: tf.LayersModel,
-  decoderModel: tf.LayersModel,
-  numDecoderTokens: number,
-  targetBeginIndex: number,
-  reverseTargetCharIndex: {[indice: number]: string},
-  maxDecoderSeqLength: number,
-) {
-  // Encode the input as state vectors.
-  let statesValue = encoderModel.predict(inputSeq) as tf.Tensor[];
-
-  // Generate empty target sequence of length 1.
-  let targetSeq = tf.buffer<tf.Rank.R3>([
-    1,
-    1,
-    numDecoderTokens,
-  ]);
-
-  // Populate the first character of target sequence with the start character.
-  targetSeq.set(1, 0, 0, targetBeginIndex);
-
-  // Sampling loop for a batch of sequences
-  // (to simplify, here we assume a batch of size 1).
-  let stopCondition = false;
-  let decodedSentence = '';
-  while (!stopCondition) {
-    const [outputTokens, h, c] = decoderModel.predict(
-      [targetSeq.toTensor(), ...statesValue]
-    ) as [
-      tf.Tensor<tf.Rank.R3>,
-      tf.Tensor<tf.Rank.R2>,
-      tf.Tensor<tf.Rank.R2>,
-    ];
-
-    // Sample a token
-    const sampledTokenIndex =
-        await outputTokens.squeeze().argMax(-1).array() as number;
-
-    const sampledChar = reverseTargetCharIndex[sampledTokenIndex];
-    decodedSentence += sampledChar;
-
-    // Exit condition: either hit max length
-    // or find stop character.
-    if (sampledChar === '\n' ||
-        decodedSentence.length > maxDecoderSeqLength) {
-      stopCondition = true;
-    }
-
-    // Update the target sequence (of length 1).
-    targetSeq = tf.buffer<tf.Rank.R3>([1, 1, numDecoderTokens], 'float32');
-    targetSeq.set(1, 0, 0, sampledTokenIndex);
-
-    // Update states
-    statesValue = [h, c];
-  }
-  return decodedSentence;
-}
+// async function decodeSequence (
+//   inputSeq: tf.Tensor,
+//   encoderModel: tf.LayersModel,
+//   decoderModel: tf.LayersModel,
+//   numDecoderTokens: number,
+//   targetBeginIndex: number,
+//   reverseTargetCharIndex: {[indice: number]: string},
+//   maxDecoderSeqLength: number,
+// ) {
+//   // Encode the input as state vectors.
+//   let statesValue = encoderModel.predict(inputSeq) as tf.Tensor[];
+//
+//   // Generate empty target sequence of length 1.
+//   let targetSeq = tf.buffer<tf.Rank.R3>([
+//     1,
+//     1,
+//     numDecoderTokens,
+//   ]);
+//
+//   // Populate the first character of target sequence with the start character.
+//   targetSeq.set(1, 0, 0, targetBeginIndex);
+//
+//   // Sampling loop for a batch of sequences
+//   // (to simplify, here we assume a batch of size 1).
+//   let stopCondition = false;
+//   let decodedSentence = '';
+//   while (!stopCondition) {
+//     const [outputTokens, h, c] = decoderModel.predict(
+//       [targetSeq.toTensor(), ...statesValue]
+//     ) as [
+//       tf.Tensor<tf.Rank.R3>,
+//       tf.Tensor<tf.Rank.R2>,
+//       tf.Tensor<tf.Rank.R2>,
+//     ];
+//
+//     // Sample a token
+//     const sampledTokenIndex =
+//         await outputTokens.squeeze().argMax(-1).array() as number;
+//
+//     const sampledChar = reverseTargetCharIndex[sampledTokenIndex];
+//     decodedSentence += sampledChar;
+//
+//     // Exit condition: either hit max length
+//     // or find stop character.
+//     if (sampledChar === '\n' ||
+//         decodedSentence.length > maxDecoderSeqLength) {
+//       stopCondition = true;
+//     }
+//
+//     // Update the target sequence (of length 1).
+//     targetSeq = tf.buffer<tf.Rank.R3>([1, 1, numDecoderTokens], 'float32');
+//     targetSeq.set(1, 0, 0, sampledTokenIndex);
+//
+//     // Update states
+//     statesValue = [h, c];
+//   }
+//   return decodedSentence;
+// }
 
 async function main () {
   let tfn;
@@ -361,22 +436,13 @@ async function main () {
   }
 
   const {
-    inputTexts,
-    maxDecoderSeqLength,
     numEncoderTokens,
     numDecoderTokens,
-    targetTokenIndex,
-    encoderInputData,
-    decoderInputData,
-    decoderTargetData,
+    trainDs,
+    validDs
   } = await readData(args.data_path);
 
   const {
-    encoderInputs,
-    encoderStates,
-    decoderInputs,
-    decoderLstm,
-    decoderDense,
     model,
   } = seq2seqModel(numEncoderTokens, numDecoderTokens, args.latent_dim);
 
@@ -393,11 +459,10 @@ async function main () {
       `  tensorboard --logdir ${args.logDir}\n`);
   }
 
-  await model.fit(
-    [encoderInputData, decoderInputData], decoderTargetData, {
-      batchSize: args.batch_size,
+  await model.fitDataset(
+      trainDs, {
+      validationData: validDs,
       epochs: args.epochs,
-      validationSplit: 0.2,
       callbacks: args.logDir == null ? null :
           tfn.node.tensorBoard(args.logDir, {
             updateFreq: args.logUpdateFreq
@@ -418,67 +483,67 @@ async function main () {
   // 3) Repeat with the current target token and current states
 
   // Define sampling models
-  const encoderModel = tf.model({
-    inputs: encoderInputs,
-    outputs: encoderStates,
-    name: 'encoderModel',
-  });
-
-  const decoderStateInputH = tf.layers.input({
-    shape: [args.latent_dim],
-    name: 'decoderStateInputHidden',
-  });
-  const decoderStateInputC = tf.layers.input({
-    shape: args.latent_dim,
-    name: 'decoderStateInputCell',
-  });
-  const decoderStatesInputs = [decoderStateInputH, decoderStateInputC];
-  let [decoderOutputs, stateH, stateC] = decoderLstm.apply(
-      [decoderInputs, ...decoderStatesInputs]
-  ) as tf.SymbolicTensor[];
-
-  const decoderStates = [stateH, stateC];
-  decoderOutputs = decoderDense.apply(decoderOutputs) as tf.SymbolicTensor;
-  const decoderModel = tf.model({
-    inputs: [decoderInputs, ...decoderStatesInputs],
-    outputs: [decoderOutputs, ...decoderStates],
-    name: 'decoderModel',
-  });
-
-  // Reverse-lookup token index to decode sequences back to
-  // something readable.
-  const reverseTargetCharIndex =
-      invertKv(targetTokenIndex) as {[indice: number]: string};
-
-  const targetBeginIndex = targetTokenIndex['\t'];
-
-  for (let seqIndex = 0; seqIndex < args.num_test_sentences; seqIndex++) {
-    // Take one sequence (part of the training set)
-    // for trying out decoding.
-    const inputSeq = encoderInputData.slice(seqIndex, 1);
-
-    // Get expected output
-    const targetSeqVoc =
-        decoderTargetData.slice(seqIndex, 1).squeeze([0]) as tf.Tensor2D;
-    const targetSeqTensor = targetSeqVoc.argMax(-1) as tf.Tensor1D;
-
-    const targetSeqList = await targetSeqTensor.array();
-
-    // One-hot to index
-    const targetSeq =
-        targetSeqList.map(indice => reverseTargetCharIndex[indice]);
-
-    // Array to string
-    const targetSeqStr = targetSeq.join('').replace('\n', '');
-    const decodedSentence = await decodeSequence(
-      inputSeq, encoderModel, decoderModel, numDecoderTokens,
-      targetBeginIndex, reverseTargetCharIndex, maxDecoderSeqLength,
-    );
-    console.log('-');
-    console.log('Input sentence:', inputTexts[seqIndex]);
-    console.log('Target sentence:', targetSeqStr);
-    console.log('Decoded sentence:', decodedSentence);
-  }
+  // const encoderModel = tf.model({
+  //   inputs: encoderInputs,
+  //   outputs: encoderStates,
+  //   name: 'encoderModel',
+  // });
+  //
+  // const decoderStateInputH = tf.layers.input({
+  //   shape: [args.latent_dim],
+  //   name: 'decoderStateInputHidden',
+  // });
+  // const decoderStateInputC = tf.layers.input({
+  //   shape: args.latent_dim,
+  //   name: 'decoderStateInputCell',
+  // });
+  // const decoderStatesInputs = [decoderStateInputH, decoderStateInputC];
+  // let [decoderOutputs, stateH, stateC] = decoderLstm.apply(
+  //     [decoderInputs, ...decoderStatesInputs]
+  // ) as tf.SymbolicTensor[];
+  //
+  // const decoderStates = [stateH, stateC];
+  // decoderOutputs = decoderDense.apply(decoderOutputs) as tf.SymbolicTensor;
+  // const decoderModel = tf.model({
+  //   inputs: [decoderInputs, ...decoderStatesInputs],
+  //   outputs: [decoderOutputs, ...decoderStates],
+  //   name: 'decoderModel',
+  // });
+  //
+  // // Reverse-lookup token index to decode sequences back to
+  // // something readable.
+  // const reverseTargetCharIndex =
+  //     invertKv(targetTokenIndex) as {[indice: number]: string};
+  //
+  // const targetBeginIndex = targetTokenIndex['\t'];
+  //
+  // for (let seqIndex = 0; seqIndex < args.num_test_sentences; seqIndex++) {
+  //   // Take one sequence (part of the training set)
+  //   // for trying out decoding.
+  //   const inputSeq = encoderInputData.slice(seqIndex, 1);
+  //
+  //   // Get expected output
+  //   const targetSeqVoc =
+  //       decoderTargetData.slice(seqIndex, 1).squeeze([0]) as tf.Tensor2D;
+  //   const targetSeqTensor = targetSeqVoc.argMax(-1) as tf.Tensor1D;
+  //
+  //   const targetSeqList = await targetSeqTensor.array();
+  //
+  //   // One-hot to index
+  //   const targetSeq =
+  //       targetSeqList.map(indice => reverseTargetCharIndex[indice]);
+  //
+  //   // Array to string
+  //   const targetSeqStr = targetSeq.join('').replace('\n', '');
+  //   const decodedSentence = await decodeSequence(
+  //     inputSeq, encoderModel, decoderModel, numDecoderTokens,
+  //     targetBeginIndex, reverseTargetCharIndex, maxDecoderSeqLength,
+  //   );
+  //   console.log('-');
+  //   console.log('Input sentence:', inputTexts[seqIndex]);
+  //   console.log('Target sentence:', targetSeqStr);
+  //   console.log('Decoded sentence:', decodedSentence);
+  // }
 }
 
 
