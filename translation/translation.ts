@@ -187,8 +187,8 @@ async function readData (dataFile: string) {
   const ys = tf.data.generator(dataY);
   const trainDs = tf.data
       .zip({ xs, ys })
-      .shuffle(64 * 4)
-      .batch(64);
+      .shuffle(32 * 4)
+      .batch(32);
 
   function* dataValidX() {
     for (
@@ -244,8 +244,8 @@ async function readData (dataFile: string) {
   const ysValid = tf.data.generator(dataValidY);
   const validDs = tf.data
       .zip({ xs: xsValid, ys: ysValid })
-      .shuffle(64 * 4)
-      .batch(64);
+      .shuffle(32 * 4)
+      .batch(32);
 
   return {
     inputTexts,
