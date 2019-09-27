@@ -463,10 +463,12 @@ async function main () {
       trainDs, {
       validationData: validDs,
       epochs: args.epochs,
-      callbacks: args.logDir == null ? null :
-          tfn.node.tensorBoard(args.logDir, {
-            updateFreq: args.logUpdateFreq
-          })
+      callbacks: [
+        tfn.node.tensorBoard(`./logs/train-${process.pid}`, {
+          updateFreq: args.logUpdateFreq
+        }),
+        tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 10 }),
+      ]
     }
   );
 
