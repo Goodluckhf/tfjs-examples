@@ -156,10 +156,10 @@ async function readData (dataFile: string) {
         decoderInputDataBuf.set(1, t, targetTokenIndex[char]);
       }
 
-      yield {
+      yield tf.tidy(() =>({
         encoderInputs: encoderInputDataBuf.toTensor(),
         decoderInputs: decoderInputDataBuf.toTensor(),
-      };
+      }));
     }
   }
 
@@ -213,10 +213,10 @@ async function readData (dataFile: string) {
         decoderInputDataBuf.set(1, t, targetTokenIndex[char]);
       }
 
-      yield {
+      yield tf.tidy(() =>({
         encoderInputs: encoderInputDataBuf.toTensor(),
         decoderInputs: decoderInputDataBuf.toTensor(),
-      };
+      }));
     }
   }
 
