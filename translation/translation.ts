@@ -38,6 +38,7 @@ const {zip} = require('zip-array');
 import * as tf from '@tensorflow/tfjs';
 
 let args = {} as any;
+const maxLength = 100;
 
 async function readData (dataFile: string) {
   // Vectorize the data.
@@ -62,9 +63,10 @@ async function readData (dataFile: string) {
     }
 
     let [inputText, targetText] = line.split('\t');
+    inputText = inputText.slice(0, maxLength);
     // We use "tab" as the "start sequence" character for the targets, and "\n"
     // as "end sequence" character.
-    targetText = '\t' + targetText + '\n';
+    targetText = '\t' + targetText.slice(0, maxLength) + '\n';
 
     inputTexts.push(inputText);
     targetTexts.push(targetText);
