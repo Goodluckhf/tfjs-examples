@@ -39,7 +39,7 @@ const invertKv = require('invert-kv');
 import * as tf from '@tensorflow/tfjs';
 
 let args = {} as any;
-const maxLength = 10;
+const maxLength = 50;
 
 async function readData (dataFile: string) {
   // Vectorize the data.
@@ -199,8 +199,8 @@ async function readData (dataFile: string) {
   const ys = tf.data.generator(dataY);
   const trainDs = tf.data
       .zip({ xs, ys })
-      .shuffle(32 * 4)
-      .batch(32);
+      .shuffle(args.batch_size * 4)
+      .batch(args.batch_size);
 
   function* dataValidX() {
     for (
@@ -226,8 +226,8 @@ async function readData (dataFile: string) {
   const ysValid = tf.data.generator(dataValidY);
   const validDs = tf.data
       .zip({ xs: xsValid, ys: ysValid })
-      .shuffle(32 * 4)
-      .batch(32);
+      .shuffle(args.batch_size * 4)
+      .batch(args.batch_size);
 
   return {
     inputTexts,
