@@ -456,7 +456,7 @@ async function main () {
   }
 
   await model.fitDataset(
-      trainDs, {
+    trainDs, {
       validationData: validDs,
       epochs: args.epochs,
       callbacks: [
