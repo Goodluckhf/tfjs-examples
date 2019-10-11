@@ -226,8 +226,7 @@ async function readData (dataFile: string) {
   const ysValid = tf.data.generator(dataValidY);
   const validDs = tf.data
       .zip({ xs: xsValid, ys: ysValid })
-      .shuffle(args.batch_size * 4)
-      .batch(args.batch_size);
+      .batch(inputTextValidation.length);
 
   return {
     inputTexts,
