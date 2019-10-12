@@ -428,7 +428,6 @@ async function main () {
     targetTokenIndex,
     maxDecoderSeqLength,
     getXSample,
-    getYSample,
     targetTexts
   } = await readData(args.data_path);
 
@@ -523,28 +522,16 @@ async function main () {
     const [inputSentence] = inputTexts.slice(sampleIndex, sampleIndex + 1);
     const [targetSentence] = targetTexts.slice(sampleIndex, sampleIndex + 1);
     const {encoderInputs: x} = getXSample(inputSentence, targetSentence);
-    const y = getYSample(targetSentence);
-    // Get expected output
-    const targetSeqVoc =
-        y.expandDims().squeeze([0]) as tf.Tensor2D;
-    const targetSeqTensor = targetSeqVoc.argMax(-1) as tf.Tensor1D;
-
-    const targetSeqList = await targetSeqTensor.array();
-
-    // One-hot to index
-    const targetSeq =
-        targetSeqList.map(indice => reverseTargetCharIndex[indice]);
 
     // Array to string
-    const targetSeqStr = targetSeq.join('').replace('\n', '');
     const decodedSentence = await decodeSequence(
       x.expandDims(), encoderModel, decoderModel, numDecoderTokens,
       targetBeginIndex, reverseTargetCharIndex, maxDecoderSeqLength,
     );
 
     console.log('-');
-    console.log('Input sentence:', inputTexts[seqIndex]);
-    console.log('Target sentence:', targetSeqStr);
+    console.log('Input sentence:', inputSentence);
+    console.log('Target sentence:', targetSentence);
     console.log('Decoded sentence:', decodedSentence);
   }
 }
