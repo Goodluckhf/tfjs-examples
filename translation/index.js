@@ -175,7 +175,7 @@ class Translator {
 
   /** Translate the given English sentence into French. */
   translate(inputSentence) {
-    const inputSeq = this.encodeString(inputSentence);
+    const inputSeq = this.encodeString(inputSentence.toLowerCase());
     const decodedSentence = this.decodeSequence(inputSeq);
     return decodedSentence;
   }

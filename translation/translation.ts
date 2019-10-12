@@ -69,8 +69,8 @@ async function readData (dataFile: string) {
     // as "end sequence" character.
     targetText = '\t' + targetText.slice(0, maxLength) + '\n';
 
-    inputTexts.push(inputText);
-    targetTexts.push(targetText);
+    inputTexts.push(inputText.toLowerCase());
+    targetTexts.push(targetText.toLowerCase());
 
     for (const char of inputText) {
       if (!inputCharacters.has(char)) {
