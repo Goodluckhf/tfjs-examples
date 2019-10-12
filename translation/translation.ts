@@ -39,9 +39,8 @@ const invertKv = require('invert-kv');
 import * as tf from '@tensorflow/tfjs';
 
 let args = {} as any;
-const maxLength = 50;
 
-async function readData (dataFile: string) {
+async function readData (dataFile: string, maxLength: number) {
   // Vectorize the data.
   const inputTexts: string[] = [];
   const targetTexts: string[] = [];
@@ -429,7 +428,7 @@ async function main () {
     maxDecoderSeqLength,
     getXSample,
     targetTexts
-  } = await readData(args.data_path);
+  } = await readData(args.data_path, args.max_sequence_length);
 
   const {
     model,
@@ -580,6 +579,14 @@ parser.addArgument(
     type: 'int',
     defaultValue: 10000,
     help: 'Number of samples to train on.',
+  }
+);
+parser.addArgument(
+  '--max_sequence_length',
+  {
+    type: 'int',
+    defaultValue: 50,
+    help: 'Maximum length of sequence.',
   }
 );
 parser.addArgument(
