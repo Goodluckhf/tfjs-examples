@@ -460,7 +460,7 @@ async function main () {
         tfn.node.tensorBoard(`./logs/train-${process.pid}`, {
           updateFreq: args.logUpdateFreq
         }),
-        tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 10 }),
+        tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 50 }),
       ]
     }
   );
