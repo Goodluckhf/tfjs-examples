@@ -37,6 +37,7 @@ const {zip} = require('zip-array');
 const invertKv = require('invert-kv');
 
 import * as tf from '@tensorflow/tfjs';
+import { LSTM } from '@tensorflow/tfjs-layers/dist/layers/recurrent';
 
 let args = {} as any;
 
@@ -276,11 +277,14 @@ function seq2seqModel (
     name: 'encoderInputs',
   });
 
-  const encoder = tf.layers.lstm({
-    units: latentDim,
-    returnState: true,
-    name: 'encoderLstm',
+  const encoder = tf.layers.bidirectional({
+    layer: tf.layers.lstm({
+      units: latentDim,
+      returnState: true,
+      name: 'encoderLstm',
+    }) as LSTM
   });
+
   const [, stateH, stateC] = encoder.apply(encoderInputs) as tf.SymbolicTensor[];
   // We discard `encoder_outputs` and only keep the states.
   const encoderStates = [stateH, stateC];
