@@ -65,10 +65,10 @@ async function readData (dataFile: string, maxLength: number) {
     }
 
     let [inputText, targetText] = line.split('\t');
-    inputText = inputText.slice(0, maxLength);
+    inputText = inputText.slice(0, maxLength).toLowerCase().trim();
     // We use "tab" as the "start sequence" character for the targets, and "\n"
     // as "end sequence" character.
-    targetText = '\t' + targetText.slice(0, maxLength) + '\n';
+    targetText = '\t' + targetText.slice(0, maxLength).toLowerCase().trim() + '\n';
 
     inputTexts.push(inputText.toLowerCase());
     targetTexts.push(targetText.toLowerCase());
@@ -535,9 +535,9 @@ async function main () {
     );
 
     console.log('-');
-    console.log('Input sentence:', inputSentence);
-    console.log('Target sentence:', targetSentence);
-    console.log('Decoded sentence:', decodedSentence);
+    console.log('Input sentence:', inputSentence.trim());
+    console.log('Target sentence:', targetSentence.trim());
+    console.log('Decoded sentence:', decodedSentence.trim());
   }
 }
 
