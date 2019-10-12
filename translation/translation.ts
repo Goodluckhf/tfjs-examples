@@ -38,6 +38,7 @@ const invertKv = require('invert-kv');
 
 import * as tf from '@tensorflow/tfjs';
 import { LSTM } from '@tensorflow/tfjs-layers/dist/layers/recurrent';
+import { SaveCallback } from './save-callback';
 
 let args = {} as any;
 
@@ -465,6 +466,7 @@ async function main () {
           updateFreq: args.logUpdateFreq
         }),
         tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 50 }),
+        new SaveCallback(5, `file://${args.artifacts_dir}`)
       ]
     }
   );
