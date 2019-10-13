@@ -462,7 +462,7 @@ async function main () {
     model,
     decoderInputs,
     encoderInputs,
-    decoderLstm,
+    // decoderLstm,
     encoderStates,
     decoderDense,
     decoderEmbeddingInputs,
@@ -523,6 +523,13 @@ async function main () {
     shape: args.latent_dim,
     name: 'decoderStateInputCell',
   });
+
+  const decoderLstm = tf.layers.lstm({
+    units: args.latent_dim,
+    returnState: true,
+    name: 'decoderLstm',
+  });
+
   const decoderStatesInputs = [decoderStateInputH, decoderStateInputC];
   let [decoderOutputs, stateH, stateC] = decoderLstm.apply(
       [decoderEmbeddingInputs, ...decoderStatesInputs]
