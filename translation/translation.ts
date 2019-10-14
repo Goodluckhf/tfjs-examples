@@ -336,7 +336,8 @@ async function main() {
         pretrainedEncoderMetadata,
         seq2seq,
         targetBeginIndex: targetTokenIndex['\t'],
-        testData: inputTexts,
+        testTargetData: targetTexts,
+        testInputData: inputTexts,
       }),
     ],
   });

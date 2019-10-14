@@ -12,7 +12,8 @@ export type CallbackArgs = {
   seq2seq: Seq2seq;
   pretrainedEncoderMetadata: PretrainedEncoderMetadata;
   pretrainedDecoderMetadata: PretrainedDecoderMetadata;
-  testData: string[];
+  testInputData: string[];
+  testTargetData: string[];
   examplesLength: number;
   targetBeginIndex: number;
 };
@@ -22,15 +23,17 @@ export class TestBatchCallback extends Callback {
   private readonly everyEpoch: number;
   private readonly encoderModel: tf.LayersModel;
   private readonly decoderModel: tf.LayersModel;
-  private readonly testData: string[];
   private readonly examplesLength: number;
   private readonly targetBeginIndex: number;
+  private readonly testInputData: string[];
+  private readonly testTargetData: string[];
 
   constructor(sequenceDecoder: SequenceDecoder, config: CallbackArgs) {
     super();
     this.sequenceDecoder = sequenceDecoder;
     this.targetBeginIndex = config.targetBeginIndex;
-    this.testData = config.testData;
+    this.testInputData = config.testInputData;
+    this.testTargetData = config.testTargetData;
     this.everyEpoch = config.everyEpoch;
     this.examplesLength = config.examplesLength;
     this.encoderModel = config.seq2seq.buildPretrainedEncoder(
@@ -48,10 +51,13 @@ export class TestBatchCallback extends Callback {
 
     console.warn('Testing values...');
     for (let i = 0; i < this.examplesLength; i++) {
-      const sampleIndex = Math.floor(Math.random() * this.testData.length);
+      const sampleIndex = Math.floor(Math.random() * this.testInputData.length);
 
-      const [inputSentence] = this.testData.slice(sampleIndex, sampleIndex + 1);
-      const [targetSentence] = this.testData.slice(
+      const [inputSentence] = this.testInputData.slice(
+        sampleIndex,
+        sampleIndex + 1,
+      );
+      const [targetSentence] = this.testTargetData.slice(
         sampleIndex,
         sampleIndex + 1,
       );
