@@ -24,7 +24,7 @@ import * as ui from './ui';
 export async function urlExists(url) {
   ui.status('Testing url ' + url);
   try {
-    const response = await fetch(url, {method: 'HEAD'});
+    const response = await fetch(url, { method: 'HEAD' });
     return response.ok;
   } catch (err) {
     return false;

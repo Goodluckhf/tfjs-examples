@@ -27,10 +27,11 @@ export function setEnglish(text, translate) {
 
 export function setTranslationFunction(translate) {
   const englishElement = document.getElementById('englishSentence');
-  englishElement.addEventListener('input', (e) => {
+  englishElement.addEventListener('input', e => {
     const inputSentence = englishElement.value;
-    document.getElementById('frenchSentence').textContent =
-        translate(inputSentence);
+    document.getElementById('frenchSentence').textContent = translate(
+      inputSentence,
+    );
   });
 }
 
