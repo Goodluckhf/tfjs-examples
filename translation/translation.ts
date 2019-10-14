@@ -37,8 +37,8 @@ const { zip } = require('zip-array');
 const invertKv = require('invert-kv');
 
 import * as tf from '@tensorflow/tfjs';
-import { LSTM } from '@tensorflow/tfjs-layers/dist/layers/recurrent';
 import { SaveCallback } from './save-callback';
+import { Seq2seq } from './model/seq2seq';
 
 let args = {} as any;
 
@@ -257,126 +257,6 @@ async function readData(dataFile: string, maxLength: number) {
 }
 
 /**
-Create a Keras model for the seq2seq translation.
-
-Args:
-  num_encoder_tokens: Total number of distinct tokens in the inputs
-    to the encoder.
-  num_decoder_tokens: Total number of distinct tokens in the outputs
-    to/from the decoder
-  latent_dim: Number of latent dimensions in the LSTMs.
-
-Returns:
-  encoder_inputs: Instance of `keras.Input`, symbolic tensor as input to
-    the encoder LSTM.
-  encoder_states: Instance of `keras.Input`, symbolic tensor for output
-    states (h and c) from the encoder LSTM.
-  decoder_inputs: Instance of `keras.Input`, symbolic tensor as input to
-    the decoder LSTM.
-  decoder_lstm: `keras.Layer` instance, the decoder LSTM.
-  decoder_dense: `keras.Layer` instance, the Dense layer in the decoder.
-  model: `keras.Model` instance, the entire translation model that can be
-    used in training.
-*/
-function seq2seqModel(
-  numEncoderTokens: number,
-  numDecoderTokens: number,
-  inputSequenceLength: number,
-  targetSequenceLength: number,
-  latentDim: number,
-) {
-  // Define an input sequence and process it.
-  const encoderInputs = tf.layers.input({
-    shape: [inputSequenceLength] as number[],
-    name: 'encoderInputs',
-  });
-
-  // @ts-ignore
-  const encoderEmbedding = tf.layers.embedding({
-    inputDim: numEncoderTokens,
-    outputDim: 32,
-  });
-
-  const encoderEmbeddingInputs = encoderEmbedding.apply(encoderInputs);
-
-  const decoderEmbedding = tf.layers.embedding({
-    inputDim: numDecoderTokens,
-    outputDim: 32,
-  });
-
-  const encoder = tf.layers.bidirectional({
-    layer: tf.layers.lstm({
-      units: latentDim,
-      returnState: true,
-      name: 'encoderLstm',
-    }) as LSTM,
-  });
-
-  const [, forwardH, forwardC, backwardH, backwardC] = encoder.apply(
-    encoderEmbeddingInputs,
-  ) as tf.SymbolicTensor[];
-  const stateH = tf.layers
-    .concatenate()
-    .apply([forwardH, backwardH]) as tf.SymbolicTensor;
-  const stateC = tf.layers
-    .concatenate()
-    .apply([forwardC, backwardC]) as tf.SymbolicTensor;
-  // We discard `encoder_outputs` and only keep the states.
-  const encoderStates = [stateH, stateC];
-
-  // Set up the decoder, using `encoder_states` as initial state.
-  const decoderInputs = tf.layers.input({
-    shape: [targetSequenceLength] as number[],
-    name: 'decoderInputs',
-  });
-  const decoderEmbeddingInputs = decoderEmbedding.apply(
-    decoderInputs,
-  ) as tf.SymbolicTensor;
-
-  // We set up our decoder to return full output sequences,
-  // and to return internal states as well. We don't use the
-  // return states in the training model, but we will use them in inference.
-  const decoderLstm = tf.layers.lstm({
-    units: args.latent_dim * 2,
-    returnSequences: true,
-    returnState: true,
-    name: 'decoderLstm',
-  });
-
-  const [decoderOutputs] = decoderLstm.apply([
-    decoderEmbeddingInputs,
-    ...encoderStates,
-  ]) as tf.Tensor[];
-
-  const decoderDense = tf.layers.dense({
-    units: numDecoderTokens,
-    activation: 'softmax',
-    name: 'decoderDense',
-  });
-
-  const decoderDenseOutputs = decoderDense.apply(
-    decoderOutputs,
-  ) as tf.SymbolicTensor;
-
-  // Define the model that will turn
-  // `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
-  const model = tf.model({
-    inputs: [encoderInputs, decoderInputs],
-    outputs: decoderDenseOutputs,
-    name: 'seq2seqModel',
-  });
-  return {
-    encoderInputs,
-    encoderStates,
-    decoderEmbeddingInputs,
-    decoderInputs,
-    decoderLstm,
-    decoderDense,
-    model,
-  };
-}
-
-/**
 Decode (i.e., translate) an encoded sentence.
 
 Args:
@@ -471,21 +351,23 @@ async function main() {
     targetTexts,
   } = await readData(args.data_path, args.max_sequence_length);
 
-  const {
-    model,
-    decoderInputs,
-    encoderInputs,
-    // decoderLstm,
-    encoderStates,
-    decoderDense,
-    decoderEmbeddingInputs,
-  } = seq2seqModel(
+  const seq2seq = new Seq2seq({
+    embeddingDim: args.embedding_dim,
+    latentDim: args.latent_dim,
+    inputSequenceLength: maxEncoderSeqLength,
+    targetSequenceLength: maxDecoderSeqLength,
     numEncoderTokens,
     numDecoderTokens,
-    maxEncoderSeqLength,
-    maxDecoderSeqLength,
-    args.latent_dim,
-  );
+  });
+
+  const encoder = seq2seq.buildEncoder();
+  const decoder = seq2seq.buildDecoder(encoder.states);
+
+  const model = tf.model({
+    inputs: [encoder.inputs, decoder.inputs],
+    outputs: decoder.outputs,
+    name: 'seq2seqModel',
+  });
 
   // Run training.
   model.compile({
@@ -527,41 +409,17 @@ async function main() {
   // 3) Repeat with the current target token and current states
 
   // Define sampling models
-  const encoderModel = tf.model({
-    inputs: encoderInputs,
-    outputs: encoderStates,
-    name: 'encoderModel',
+  const encoderModel = seq2seq.buildPretrainedEncoder({
+    inputs: encoder.inputs,
+    outputs: encoder.states,
   });
-
-  const decoderStateInputH = tf.layers.input({
-    shape: [args.latent_dim * 2],
-    name: 'decoderStateInputHidden',
+  const decoderModel = seq2seq.buildPretrainedDecoder({
+    embeddingInputs: decoder.embeddingInputs,
+    inputs: decoder.inputs,
+    outputs: decoder.outputs,
   });
-  const decoderStateInputC = tf.layers.input({
-    shape: [args.latent_dim * 2],
-    name: 'decoderStateInputCell',
-  });
-
-  const decoderLstm = tf.layers.lstm({
-    units: args.latent_dim * 2,
-    returnState: true,
-    name: 'decoderLstm',
-  });
-
-  const decoderStatesInputs = [decoderStateInputH, decoderStateInputC];
-  let [decoderOutputs, stateH, stateC] = decoderLstm.apply([
-    decoderEmbeddingInputs,
-    ...decoderStatesInputs,
-  ]) as tf.SymbolicTensor[];
-
-  const decoderStates = [stateH, stateC];
-  decoderOutputs = decoderDense.apply(decoderOutputs) as tf.SymbolicTensor;
-  const decoderModel = tf.model({
-    inputs: [decoderInputs, ...decoderStatesInputs],
-    outputs: [decoderOutputs, ...decoderStates],
-    name: 'decoderModel',
-  });
-  decoderModel.summary(100);
+  encoderModel.summary(120);
+  decoderModel.summary(120);
   // Reverse-lookup token index to decode sequences back to
   // something readable.
   const reverseTargetCharIndex = invertKv(targetTokenIndex) as {
@@ -620,6 +478,11 @@ parser.addArgument('--epochs', {
 parser.addArgument('--latent_dim', {
   type: 'int',
   defaultValue: 256,
+  help: 'Latent dimensionality of the encoding space.',
+});
+parser.addArgument('--embedding_dim', {
+  type: 'int',
+  defaultValue: 32,
   help: 'Latent dimensionality of the encoding space.',
 });
 parser.addArgument('--num_samples', {
