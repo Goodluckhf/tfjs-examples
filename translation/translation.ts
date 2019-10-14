@@ -137,6 +137,8 @@ async function readData (dataFile: string, maxLength: number) {
     'target_token_index': targetTokenIndex,
     'max_encoder_seq_length': maxEncoderSeqLength,
     'max_decoder_seq_length': maxDecoderSeqLength,
+    'encoder_tokens_length': numEncoderTokens,
+    'decoder_token_length': numDecoderTokens,
   };
 
   fs.writeFileSync(metadataJsonPath, JSON.stringify(metadata));
@@ -286,9 +288,7 @@ function seq2seqModel (
 
   // @ts-ignore
   const encoderEmbedding = tf.layers.embedding({
-    // inputShape: [null, numEncoderTokens],
     inputDim: numEncoderTokens,
-    // inputLength: numEncoderTokens,
     outputDim: 32,
   });
 
@@ -307,7 +307,9 @@ function seq2seqModel (
     }) as LSTM
   });
 
-  const [, stateH, stateC] = encoder.apply(encoderEmbeddingInputs) as tf.SymbolicTensor[];
+  const [, forwardH, forwardC, backwardH, backwardC] = encoder.apply(encoderEmbeddingInputs) as tf.SymbolicTensor[];
+  const stateH = tf.layers.concatenate().apply([forwardH, backwardH]) as tf.SymbolicTensor;
+  const stateC = tf.layers.concatenate().apply([forwardC, backwardC]) as tf.SymbolicTensor;
   // We discard `encoder_outputs` and only keep the states.
   const encoderStates = [stateH, stateC];
 
@@ -322,7 +324,7 @@ function seq2seqModel (
   // and to return internal states as well. We don't use the
   // return states in the training model, but we will use them in inference.
   const decoderLstm = tf.layers.lstm({
-    units: args.latent_dim,
+    units: args.latent_dim * 2,
     returnSequences: true,
     returnState: true,
     name: 'decoderLstm',
@@ -516,16 +518,16 @@ async function main () {
   });
 
   const decoderStateInputH = tf.layers.input({
-    shape: [args.latent_dim],
+    shape: [args.latent_dim * 2],
     name: 'decoderStateInputHidden',
   });
   const decoderStateInputC = tf.layers.input({
-    shape: args.latent_dim,
+    shape: [args.latent_dim * 2],
     name: 'decoderStateInputCell',
   });
 
   const decoderLstm = tf.layers.lstm({
-    units: args.latent_dim,
+    units: args.latent_dim * 2,
     returnState: true,
     name: 'decoderLstm',
   });
