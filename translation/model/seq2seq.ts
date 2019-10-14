@@ -19,6 +19,8 @@ export type PretrainedDecoderMetadata = {
   inputs: tf.SymbolicTensor;
   outputs: tf.SymbolicTensor;
   embeddingInputs: tf.SymbolicTensor;
+  lstm: tf.layers.Layer;
+  softmax: tf.layers.Layer;
 };
 
 export class Seq2seq {
@@ -66,25 +68,15 @@ export class Seq2seq {
     });
 
     const statesInputs = [stateInputH, stateInputC];
-    let [sequenceOtput, stateH, stateC] = tf.layers
-      .lstm({
-        units: this.latentDim * 2,
-        returnState: true,
-        name: 'decoderLSTM',
-      })
-      .apply([
-        pretrained.embeddingInputs,
-        ...statesInputs,
-      ]) as tf.SymbolicTensor[];
+    let [sequenceOtput, stateH, stateC] = pretrained.lstm.apply([
+      pretrained.embeddingInputs,
+      ...statesInputs,
+    ]) as tf.SymbolicTensor[];
 
     const states = [stateH, stateC];
-    const outputs = tf.layers
-      .dense({
-        units: this.numDecoderTokens,
-        activation: 'softmax',
-        name: 'decoderDense',
-      })
-      .apply(sequenceOtput) as tf.SymbolicTensor;
+    const outputs = pretrained.softmax.apply(
+      sequenceOtput,
+    ) as tf.SymbolicTensor;
 
     return tf.model({
       inputs: [pretrained.inputs, ...statesInputs],
@@ -148,27 +140,32 @@ export class Seq2seq {
     // We set up our decoder to return full output sequences,
     // and to return internal states as well. We don't use the
     // return states in the training model, but we will use them in inference.
-    const [decoderOutputs] = tf.layers
-      .lstm({
-        units: this.latentDim * 2,
-        returnSequences: true,
-        returnState: true,
-        name: 'decoderLSTM',
-      })
-      .apply([embeddingInputs, ...encoderStates]) as tf.Tensor[];
+    const lstm = tf.layers.lstm({
+      units: this.latentDim * 2,
+      returnSequences: true,
+      returnState: true,
+      name: 'decoderLSTM',
+    });
 
-    const denseOutputs = tf.layers
-      .dense({
-        units: this.numDecoderTokens,
-        activation: 'softmax',
-        name: 'decoderSoftmax',
-      })
-      .apply(decoderOutputs) as tf.SymbolicTensor;
+    const [decoderOutputs] = lstm.apply([
+      embeddingInputs,
+      ...encoderStates,
+    ]) as tf.Tensor[];
+
+    const softMax = tf.layers.dense({
+      units: this.numDecoderTokens,
+      activation: 'softmax',
+      name: 'decoderSoftmax',
+    });
+
+    const denseOutputs = softMax.apply(decoderOutputs) as tf.SymbolicTensor;
 
     return {
       outputs: denseOutputs,
       inputs,
       embeddingInputs,
+      lstm,
+      softMax,
     };
   }
 }

@@ -93,9 +93,10 @@ export class SequenceDecoder {
         tf.Tensor<tf.Rank.R2>,
         tf.Tensor<tf.Rank.R2>,
       ];
-
       // Sample a token
       const sampledTokenIndex = (await outputTokens
+        .squeeze()
+        .slice(this.maxDecoderSeqLength - 1)
         .squeeze()
         .argMax(-1)
         .array()) as number;

@@ -316,6 +316,8 @@ async function main() {
 
   const pretrainedDecoderMetadata: PretrainedDecoderMetadata = {
     embeddingInputs: decoder.embeddingInputs,
+    lstm: decoder.lstm,
+    softmax: decoder.softMax,
     inputs: decoder.inputs,
     outputs: decoder.outputs,
   };
