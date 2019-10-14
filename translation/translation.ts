@@ -38,7 +38,13 @@ const invertKv = require('invert-kv');
 
 import * as tf from '@tensorflow/tfjs';
 import { SaveCallback } from './save-callback';
-import { Seq2seq } from './model/seq2seq';
+import {
+  PretrainedDecoderMetadata,
+  PretrainedEncoderMetadata,
+  Seq2seq,
+} from './model/seq2seq';
+import { SequenceDecoder } from './sequence-decoder';
+import { TestBatchCallback } from './test-batch-callback';
 
 let args = {} as any;
 
@@ -50,7 +56,7 @@ async function readData(dataFile: string, maxLength: number) {
   const inputCharacters = new Set<string>([
     '\n', // EOS
     '\t', // SOS
-    's', // UNK
+    '\r', // UNK
   ]);
 
   const targetCharacters = new Set<string>();
@@ -121,13 +127,6 @@ async function readData(dataFile: string, maxLength: number) {
   console.log('Max sequence length for inputs:', maxEncoderSeqLength);
   console.log('Max sequence length for outputs:', maxDecoderSeqLength);
 
-  const inputTextValidation = inputTexts.splice(
-    Math.ceil(inputTexts.length * 0.9),
-  );
-  const targetTextsValidation = targetTexts.splice(
-    Math.ceil(targetTexts.length * 0.9),
-  );
-
   const inputTokenIndex = inputCharacterList.reduce(
     (prev, curr, idx) => ((prev[curr] = idx), prev),
     {} as { [char: string]: number },
@@ -156,44 +155,39 @@ async function readData(dataFile: string, maxLength: number) {
   fs.writeFileSync(metadataJsonPath, JSON.stringify(metadata));
   console.log('Saved metadata at: ', metadataJsonPath);
 
-  function getXSample(inputSentence: string, targetSentence: string) {
-    const encoderInputDataBuf = tf.buffer<tf.Rank.R1>([maxEncoderSeqLength]);
+  return {
+    inputTexts,
+    targetTexts,
+    maxEncoderSeqLength,
+    maxDecoderSeqLength,
+    numEncoderTokens,
+    numDecoderTokens,
+    inputTokenIndex,
+    targetTokenIndex,
+    reverseTargetCharIndex: invertKv(targetTokenIndex) as {
+      [indice: number]: string;
+    },
+  };
+}
 
-    const decoderInputDataBuf = tf.buffer<tf.Rank.R1>([maxDecoderSeqLength]);
-    for (const [t, char] of inputSentence.split('').entries()) {
-      encoderInputDataBuf.set(inputTokenIndex[char] || inputTokenIndex['s'], t);
-    }
-
-    for (const [t, char] of targetSentence.split('').entries()) {
-      decoderInputDataBuf.set(
-        targetTokenIndex[char] || inputTokenIndex['s'],
-        t,
-      );
-    }
-
-    return {
-      encoderInputs: encoderInputDataBuf.toTensor(),
-      decoderInputs: decoderInputDataBuf.toTensor(),
-    };
-  }
-
-  function getYSample(targetSentence: string) {
-    const decoderTargetDataBuf = tf.buffer<tf.Rank.R1>([maxDecoderSeqLength]);
-    for (const [t, char] of targetSentence.split('').entries()) {
-      if (t > 0) {
-        decoderTargetDataBuf.set(targetTokenIndex[char] || 0, t - 1);
-      }
-    }
-
-    return decoderTargetDataBuf.toTensor();
-  }
+function createTrainDataset(
+  inputTexts: string[],
+  targetTexts: string[],
+  sequenceDecoder: SequenceDecoder,
+) {
+  const inputTextValidation = inputTexts.splice(
+    Math.ceil(inputTexts.length * 0.9),
+  );
+  const targetTextsValidation = targetTexts.splice(
+    Math.ceil(targetTexts.length * 0.9),
+  );
 
   function* dataX() {
     for (const [, [inputText, targetText]] of zip(
       inputTexts,
       targetTexts,
     ).entries() as IterableIterator<[number, [string, string]]>) {
-      yield tf.tidy(() => getXSample(inputText, targetText));
+      yield tf.tidy(() => sequenceDecoder.getXSample(inputText, targetText));
     }
   }
 
@@ -203,7 +197,7 @@ async function readData(dataFile: string, maxLength: number) {
       targetTexts,
     ).entries() as IterableIterator<[number, [string, string]]>) {
       yield tf.tidy(() => {
-        const y = getYSample(targetText);
+        const y = sequenceDecoder.getYSample(targetText);
         return y;
       });
     }
@@ -221,7 +215,7 @@ async function readData(dataFile: string, maxLength: number) {
       inputTextValidation,
       targetTextsValidation,
     ).entries() as IterableIterator<[number, [string, string]]>) {
-      yield tf.tidy(() => getXSample(inputText, targetText));
+      yield tf.tidy(() => sequenceDecoder.getXSample(inputText, targetText));
     }
   }
 
@@ -230,7 +224,7 @@ async function readData(dataFile: string, maxLength: number) {
       inputTextValidation,
       targetTextsValidation,
     ).entries() as IterableIterator<[number, [string, string]]>) {
-      yield tf.tidy(() => getYSample(targetText));
+      yield tf.tidy(() => sequenceDecoder.getYSample(targetText));
     }
   }
 
@@ -241,91 +235,9 @@ async function readData(dataFile: string, maxLength: number) {
     .batch(args.batch_size);
 
   return {
-    inputTexts,
-    targetTexts,
-    maxEncoderSeqLength,
-    maxDecoderSeqLength,
-    numEncoderTokens,
-    numDecoderTokens,
-    inputTokenIndex,
-    targetTokenIndex,
     validDs,
     trainDs,
-    getXSample,
-    getYSample,
   };
-}
-
-/**
-Decode (i.e., translate) an encoded sentence.
-
-Args:
-  input_seq: A `numpy.ndarray` of shape
-    `(1, max_encoder_seq_length, num_encoder_tokens)`.
-  encoder_model: A `keras.Model` instance for the encoder.
-  decoder_model: A `keras.Model` instance for the decoder.
-  num_decoder_tokens: Number of unique tokens for the decoder.
-  target_begin_index: An `int`: the index for the beginning token of the
-    decoder.
-  reverse_target_char_index: A lookup table for the target characters, i.e.,
-    a map from `int` index to target character.
-  max_decoder_seq_length: Maximum allowed sequence length output by the
-    decoder.
-
-Returns:
-  The result of the decoding (i.e., translation) as a string.
-"""
-*/
-async function decodeSequence(
-  inputSeq: tf.Tensor,
-  encoderModel: tf.LayersModel,
-  decoderModel: tf.LayersModel,
-  targetBeginIndex: number,
-  reverseTargetCharIndex: { [indice: number]: string },
-  maxDecoderSeqLength: number,
-) {
-  // Encode the input as state vectors.
-  let statesValue = encoderModel.predict(inputSeq) as tf.Tensor[];
-
-  // Generate empty target sequence of length 1.
-  let targetSeq = tf.buffer<tf.Rank.R2>([1, maxDecoderSeqLength]);
-
-  // Populate the first character of target sequence with the start character.
-  targetSeq.set(targetBeginIndex, 0, 0);
-
-  // Sampling loop for a batch of sequences
-  // (to simplify, here we assume a batch of size 1).
-  let stopCondition = false;
-  let decodedSentence = '';
-  while (!stopCondition) {
-    const [outputTokens, h, c] = decoderModel.predict([
-      targetSeq.toTensor(),
-      ...statesValue,
-    ]) as [tf.Tensor<tf.Rank.R3>, tf.Tensor<tf.Rank.R2>, tf.Tensor<tf.Rank.R2>];
-
-    // Sample a token
-    const sampledTokenIndex = (await outputTokens
-      .squeeze()
-      .argMax(-1)
-      .array()) as number;
-
-    const sampledChar = reverseTargetCharIndex[sampledTokenIndex];
-    decodedSentence += sampledChar;
-
-    // Exit condition: either hit max length
-    // or find stop character.
-    if (sampledChar === '\n' || decodedSentence.length > maxDecoderSeqLength) {
-      stopCondition = true;
-    }
-
-    // Update the target sequence (of length 1).
-    targetSeq = tf.buffer<tf.Rank.R2>([1, maxDecoderSeqLength]);
-    targetSeq.set(sampledTokenIndex, 0, 0);
-
-    // Update states
-    statesValue = [h, c];
-  }
-  return decodedSentence;
 }
 
 async function main() {
@@ -341,15 +253,28 @@ async function main() {
   const {
     numEncoderTokens,
     numDecoderTokens,
-    trainDs,
-    validDs,
     inputTexts,
     targetTokenIndex,
     maxDecoderSeqLength,
     maxEncoderSeqLength,
-    getXSample,
     targetTexts,
+    inputTokenIndex,
+    reverseTargetCharIndex,
   } = await readData(args.data_path, args.max_sequence_length);
+
+  const sequenceDecoder = new SequenceDecoder({
+    inputTokenIndex,
+    maxDecoderSeqLength,
+    maxEncoderSeqLength,
+    reverseTargetCharIndex,
+    targetTokenIndex,
+  });
+
+  const { validDs, trainDs } = createTrainDataset(
+    inputTexts,
+    targetTexts,
+    sequenceDecoder,
+  );
 
   const seq2seq = new Seq2seq({
     embeddingDim: args.embedding_dim,
@@ -375,7 +300,7 @@ async function main() {
     loss: 'sparseCategoricalCrossentropy',
     metrics: [tf.metrics.sparseCategoricalAccuracy],
   });
-  model.summary(100);
+  model.summary(120);
 
   if (args.logDir != null) {
     console.log(
@@ -384,6 +309,17 @@ async function main() {
     );
   }
 
+  const pretrainedEncoderMetadata: PretrainedEncoderMetadata = {
+    inputs: encoder.inputs,
+    outputs: encoder.states,
+  };
+
+  const pretrainedDecoderMetadata: PretrainedDecoderMetadata = {
+    embeddingInputs: decoder.embeddingInputs,
+    inputs: decoder.inputs,
+    outputs: decoder.outputs,
+  };
+
   await model.fitDataset(trainDs, {
     validationData: validDs,
     epochs: args.epochs,
@@ -391,40 +327,32 @@ async function main() {
       tfn.node.tensorBoard(`./logs/train-${process.pid}`, {
         updateFreq: args.logUpdateFreq,
       }),
-      tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 50 }),
+      tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 25 }),
       new SaveCallback(5, `file://${args.artifacts_dir}`),
+      new TestBatchCallback(sequenceDecoder, {
+        everyEpoch: args.test_every_epoch,
+        examplesLength: 2,
+        pretrainedDecoderMetadata,
+        pretrainedEncoderMetadata,
+        seq2seq,
+        targetBeginIndex: targetTokenIndex['\t'],
+        testData: inputTexts,
+      }),
     ],
   });
 
   await model.save(`file://${args.artifacts_dir}`);
 
-  // tfjs.converters.save_keras_model(model, FLAGS.artifacts_dir)
-
-  // Next: inference mode (sampling).
-  // Here's the drill:
-  // 1) encode input and retrieve initial decoder state
-  // 2) run one step of decoder with this initial state
-  // and a "start of sequence" token as target.
-  // Output will be the next target token
-  // 3) Repeat with the current target token and current states
-
-  // Define sampling models
-  const encoderModel = seq2seq.buildPretrainedEncoder({
-    inputs: encoder.inputs,
-    outputs: encoder.states,
-  });
-  const decoderModel = seq2seq.buildPretrainedDecoder({
-    embeddingInputs: decoder.embeddingInputs,
-    inputs: decoder.inputs,
-    outputs: decoder.outputs,
-  });
+  const encoderModel = seq2seq.buildPretrainedEncoder(
+    pretrainedEncoderMetadata,
+  );
+  const decoderModel = seq2seq.buildPretrainedDecoder(
+    pretrainedDecoderMetadata,
+  );
   encoderModel.summary(120);
   decoderModel.summary(120);
   // Reverse-lookup token index to decode sequences back to
   // something readable.
-  const reverseTargetCharIndex = invertKv(targetTokenIndex) as {
-    [indice: number]: string;
-  };
 
   const targetBeginIndex = targetTokenIndex['\t'];
 
@@ -436,16 +364,17 @@ async function main() {
     console.log('inputTexts', inputTexts.length);
     const [inputSentence] = inputTexts.slice(sampleIndex, sampleIndex + 1);
     const [targetSentence] = targetTexts.slice(sampleIndex, sampleIndex + 1);
-    const { encoderInputs: x } = getXSample(inputSentence, targetSentence);
+    const { encoderInputs: x } = sequenceDecoder.getXSample(
+      inputSentence,
+      targetSentence,
+    );
 
     // Array to string
-    const decodedSentence = await decodeSequence(
+    const decodedSentence = await sequenceDecoder.decode(
       x.expandDims(),
       encoderModel,
       decoderModel,
       targetBeginIndex,
-      reverseTargetCharIndex,
-      maxDecoderSeqLength,
     );
 
     console.log('-');
@@ -483,6 +412,11 @@ parser.addArgument('--latent_dim', {
 parser.addArgument('--embedding_dim', {
   type: 'int',
   defaultValue: 32,
+  help: 'Latent dimensionality of the encoding space.',
+});
+parser.addArgument('--test_every_epoch', {
+  type: 'int',
+  defaultValue: 5,
   help: 'Latent dimensionality of the encoding space.',
 });
 parser.addArgument('--num_samples', {
