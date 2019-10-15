@@ -54,12 +54,14 @@ async function readData(dataFile: string, maxLength: number) {
   const targetTexts: string[] = [];
 
   const inputCharacters = new Set<string>([
-    '\n', // EOS
-    '\t', // SOS
     '\r', // UNK
   ]);
 
-  const targetCharacters = new Set<string>();
+  const targetCharacters = new Set<string>([
+    '\r', // UNK
+    '\t', // SOS
+    '\n', // EOS
+  ]);
 
   const fileStream = fs.createReadStream(dataFile);
   const rl = readline.createInterface({
@@ -107,8 +109,8 @@ async function readData(dataFile: string, maxLength: number) {
 
   await new Promise(r => rl.on('close', r));
 
-  const inputCharacterList = [...inputCharacters].sort();
-  const targetCharacterList = [...targetCharacters].sort();
+  const inputCharacterList = [...inputCharacters];
+  const targetCharacterList = [...targetCharacters];
 
   const numEncoderTokens = inputCharacterList.length;
   const numDecoderTokens = targetCharacterList.length;
@@ -280,7 +282,6 @@ async function main() {
     embeddingDim: args.embedding_dim,
     latentDim: args.latent_dim,
     inputSequenceLength: maxEncoderSeqLength,
-    targetSequenceLength: maxDecoderSeqLength,
     numEncoderTokens,
     numDecoderTokens,
   });

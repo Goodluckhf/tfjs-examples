@@ -5,7 +5,6 @@ export type Seq2seqArgs = {
   numEncoderTokens: number;
   numDecoderTokens: number;
   inputSequenceLength: number;
-  targetSequenceLength: number;
   latentDim: number;
   embeddingDim: number;
 };
@@ -28,7 +27,6 @@ export class Seq2seq {
   private readonly numDecoderTokens: number;
 
   private readonly inputSequenceLength: number;
-  private readonly targetSequenceLength: number;
 
   private readonly latentDim: number;
   private readonly embeddingDim: number;
@@ -37,14 +35,12 @@ export class Seq2seq {
     numEncoderTokens,
     numDecoderTokens,
     inputSequenceLength,
-    targetSequenceLength,
     latentDim,
     embeddingDim,
   }: Seq2seqArgs) {
     this.numEncoderTokens = numEncoderTokens;
     this.numDecoderTokens = numDecoderTokens;
     this.inputSequenceLength = inputSequenceLength;
-    this.targetSequenceLength = targetSequenceLength;
     this.latentDim = latentDim;
     this.embeddingDim = embeddingDim;
   }
@@ -125,7 +121,7 @@ export class Seq2seq {
 
   buildDecoder(encoderStates: tf.SymbolicTensor[]) {
     const inputs = tf.layers.input({
-      shape: [this.targetSequenceLength] as number[],
+      shape: [null],
       name: 'decoderInputs',
     });
 

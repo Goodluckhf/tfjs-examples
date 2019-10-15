@@ -40,7 +40,7 @@ export class SequenceDecoder {
 
     for (const [t, char] of targetSentence.split('').entries()) {
       decoderInputDataBuf.set(
-        this.targetTokenIndex[char] || this.inputTokenIndex['\r'],
+        this.targetTokenIndex[char] || this.targetTokenIndex['\r'],
         t,
       );
     }
@@ -75,65 +75,52 @@ export class SequenceDecoder {
     let statesValue = encoderModel.predict(inputSeq) as tf.Tensor[];
 
     // Generate empty target sequence of length 1.
-    let targetSeq = tf.buffer<tf.Rank.R2>([1, this.maxDecoderSeqLength]);
+    let targetSeq = tf.buffer<tf.Rank.R2>([1, 1]);
 
     // Populate the first character of target sequence with the start character.
     targetSeq.set(targetBeginIndex, 0, 0);
-    const [outputTokens] = decoderModel.predict([
-      targetSeq.toTensor(),
-      ...statesValue,
-    ]) as [tf.Tensor<tf.Rank.R3>, tf.Tensor<tf.Rank.R2>, tf.Tensor<tf.Rank.R2>];
-    // Sample a token
-    const sampledTokenIndexes = (await outputTokens
-      .squeeze()
-      .argMax(-1)
-      .array()) as number[];
 
-    return sampledTokenIndexes
-      .reduce((str, index) => {
-        return `${str}${this.reverseTargetCharIndex[index]}`;
-      }, '')
-      .trim();
+    // Sampling loop for a batch of sequences
+    // (to simplify, here we assume a batch of size 1).
+    let stopCondition = false;
+    let decodedSentence = '';
+    while (!stopCondition) {
+      const [outputTokens, h, c] = decoderModel.predict(
+        [targetSeq.toTensor(), ...statesValue],
+        {
+          verbose: true,
+        },
+      ) as [
+        tf.Tensor<tf.Rank.R3>,
+        tf.Tensor<tf.Rank.R2>,
+        tf.Tensor<tf.Rank.R2>,
+      ];
+      // Sample a token
+      const sampledTokenIndex = (await outputTokens
+        .squeeze()
+        .argMax(-1)
+        .array()) as number;
 
-    // // Sampling loop for a batch of sequences
-    // // (to simplify, here we assume a batch of size 1).
-    // let stopCondition = false;
-    // let decodedSentence = '';
-    // while (!stopCondition) {
-    //   const [outputTokens, h, c] = decoderModel.predict([
-    //     targetSeq.toTensor(),
-    //     ...statesValue,
-    //   ]) as [
-    //     tf.Tensor<tf.Rank.R3>,
-    //     tf.Tensor<tf.Rank.R2>,
-    //     tf.Tensor<tf.Rank.R2>,
-    //   ];
-    //   // Sample a token
-    //   const sampledTokenIndex = (await outputTokens
-    //     .squeeze()
-    //     .argMax(-1)
-    //     .array()) as number;
-    //
-    //   const sampledChar = this.reverseTargetCharIndex[sampledTokenIndex];
-    //   decodedSentence += sampledChar;
-    //
-    //   // Exit condition: either hit max length
-    //   // or find stop character.
-    //   if (
-    //     sampledChar === '\n' ||
-    //     decodedSentence.length > this.maxDecoderSeqLength
-    //   ) {
-    //     stopCondition = true;
-    //   }
-    //
-    //   // Update the target sequence (of length 1).
-    //   targetSeq = tf.buffer<tf.Rank.R2>([1, this.maxDecoderSeqLength]);
-    //   targetSeq.set(sampledTokenIndex, 0, 0);
-    //
-    //   // Update states
-    //   statesValue = [h, c];
-    // }
+      const sampledChar = this.reverseTargetCharIndex[sampledTokenIndex];
+      decodedSentence += sampledChar;
 
-    // return decodedSentence;
+      // Exit condition: either hit max length
+      // or find stop character.
+      if (
+        sampledChar === '\n' ||
+        decodedSentence.length > this.maxDecoderSeqLength
+      ) {
+        stopCondition = true;
+      }
+
+      // Update the target sequence (of length 1).
+      targetSeq = tf.buffer<tf.Rank.R2>([1, 1]);
+      targetSeq.set(sampledTokenIndex, 0, 0);
+
+      // Update states
+      statesValue = [h, c];
+    }
+
+    return decodedSentence;
   }
 }
