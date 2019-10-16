@@ -102,10 +102,6 @@ export class Seq2seq {
           units: this.latentDim,
           returnState: true,
           name: 'encoderLSTM',
-          cell: [
-            tf.layers.lstmCell({ units: this.latentDim }),
-            tf.layers.lstmCell({ units: this.latentDim }),
-          ],
         }) as LSTM,
       })
       .apply(embeddingInputs) as tf.SymbolicTensor[];
@@ -140,18 +136,12 @@ export class Seq2seq {
     // We set up our decoder to return full output sequences,
     // and to return internal states as well. We don't use the
     // return states in the training model, but we will use them in inference.
-    const lstm = tf.layers.bidirectional({
-      layer: tf.layers.lstm({
-        units: this.latentDim,
-        returnSequences: true,
-        returnState: true,
-        cell: [
-          tf.layers.lstmCell({ units: this.latentDim }),
-          tf.layers.lstmCell({ units: this.latentDim }),
-        ],
-        name: 'decoderLSTM',
-      }) as LSTM,
-    });
+    const lstm = tf.layers.lstm({
+      units: this.latentDim * 2,
+      returnSequences: true,
+      returnState: true,
+      name: 'decoderLSTM',
+    }) as LSTM;
 
     const [decoderOutputs] = lstm.apply([
       embeddingInputs,
