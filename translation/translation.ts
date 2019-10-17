@@ -287,11 +287,11 @@ async function main() {
   });
 
   const encoder = seq2seq.buildEncoder();
-  const decoder = seq2seq.buildDecoder(encoder.states);
+  const decoderMetadata = seq2seq.buildDecoder(encoder.states, encoder.outputs);
 
   const model = tf.model({
-    inputs: [encoder.inputs, decoder.inputs],
-    outputs: decoder.outputs,
+    inputs: [encoder.inputs, decoderMetadata.decoder.inputs],
+    outputs: decoderMetadata.decoder.outputs,
     name: 'seq2seqModel',
   });
 
@@ -312,15 +312,12 @@ async function main() {
 
   const pretrainedEncoderMetadata: PretrainedEncoderMetadata = {
     inputs: encoder.inputs,
-    outputs: encoder.states,
+    outputs: [encoder.outputs, ...encoder.states],
   };
 
   const pretrainedDecoderMetadata: PretrainedDecoderMetadata = {
-    embeddingInputs: decoder.embeddingInputs,
-    lstm: decoder.lstm,
-    softmax: decoder.softMax,
-    inputs: decoder.inputs,
-    outputs: decoder.outputs,
+    decoder: decoderMetadata.decoder,
+    attention: decoderMetadata.attention,
   };
 
   await model.fitDataset(trainDs, {

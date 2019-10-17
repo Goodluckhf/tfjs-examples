@@ -72,7 +72,9 @@ export class SequenceDecoder {
     targetBeginIndex: number,
   ) {
     // Encode the input as state vectors.
-    let statesValue = encoderModel.predict(inputSeq) as tf.Tensor[];
+    let [sequences, ...statesValue] = encoderModel.predict(
+      inputSeq,
+    ) as tf.Tensor[];
 
     // Generate empty target sequence of length 1.
     let targetSeq = tf.buffer<tf.Rank.R2>([1, 1]);
@@ -86,7 +88,7 @@ export class SequenceDecoder {
     let decodedSentence = '';
     while (!stopCondition) {
       const [outputTokens, h, c] = decoderModel.predict(
-        [targetSeq.toTensor(), ...statesValue],
+        [targetSeq.toTensor(), sequences, ...statesValue],
         {
           verbose: true,
         },

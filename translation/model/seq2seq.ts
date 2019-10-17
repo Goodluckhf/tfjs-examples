@@ -14,12 +14,23 @@ export type PretrainedEncoderMetadata = {
   outputs: tf.SymbolicTensor[];
 };
 
+export type PretrainedAttentionMetadata = {
+  attentionSoftmax: tf.layers.Layer;
+  attentionDot: tf.layers.Layer;
+  contextDot: tf.layers.Layer;
+  contextConcatenate: tf.layers.Layer;
+  tanhDense: tf.layers.Layer;
+};
+
 export type PretrainedDecoderMetadata = {
-  inputs: tf.SymbolicTensor;
-  outputs: tf.SymbolicTensor;
-  embeddingInputs: tf.SymbolicTensor;
-  lstm: tf.layers.Layer;
-  softmax: tf.layers.Layer;
+  decoder: {
+    inputs: tf.SymbolicTensor;
+    outputs: tf.SymbolicTensor;
+    embeddingInputs: tf.SymbolicTensor;
+    lstm: tf.layers.Layer;
+    softmax: tf.layers.Layer;
+  };
+  attention: PretrainedAttentionMetadata;
 };
 
 export class Seq2seq {
@@ -53,29 +64,115 @@ export class Seq2seq {
     });
   }
 
-  buildPretrainedDecoder(pretrained: PretrainedDecoderMetadata) {
+  pretrainedAttention(
+    {
+      attentionSoftmax,
+      attentionDot,
+      contextDot,
+      contextConcatenate,
+      tanhDense,
+    }: PretrainedAttentionMetadata,
+    encoderOutput: tf.SymbolicTensor,
+    decoderOutput: tf.SymbolicTensor,
+  ) {
+    const attention = attentionSoftmax.apply(
+      attentionDot.apply([decoderOutput, encoderOutput]),
+    ) as tf.SymbolicTensor;
+
+    const context = contextDot.apply([
+      attention,
+      encoderOutput,
+    ]) as tf.SymbolicTensor;
+
+    const decoderCombinedContext = contextConcatenate.apply([
+      context,
+      decoderOutput,
+    ]);
+
+    return tanhDense.apply(decoderCombinedContext);
+  }
+
+  attention(
+    encoderOutput: tf.SymbolicTensor,
+    decoderOutput: tf.SymbolicTensor,
+    lstmUnits: number,
+  ) {
+    const attentionDot = tf.layers.dot({ axes: [2, 2] });
+    const attentionSoftmax = tf.layers.activation({
+      activation: 'softmax',
+      name: 'Attention',
+    });
+    const contextDot = tf.layers.dot({
+      axes: [2, 1],
+      name: 'context',
+    });
+    const contextConcatenate = tf.layers.concatenate();
+    const tanhDense = tf.layers.dense({
+      units: lstmUnits,
+      activation: 'tanh',
+    });
+
+    const attention = attentionSoftmax.apply(
+      attentionDot.apply([decoderOutput, encoderOutput]),
+    ) as tf.SymbolicTensor;
+
+    const context = contextDot.apply([
+      attention,
+      encoderOutput,
+    ]) as tf.SymbolicTensor;
+
+    const decoderCombinedContext = contextConcatenate.apply([
+      context,
+      decoderOutput,
+    ]);
+
+    const outputs = tanhDense.apply(decoderCombinedContext);
+
+    return {
+      attentionDot,
+      attentionSoftmax,
+      contextDot,
+      contextConcatenate,
+      tanhDense,
+      outputs,
+    };
+  }
+
+  buildPretrainedDecoder({ attention, decoder }: PretrainedDecoderMetadata) {
     const stateInputH = tf.layers.input({
       shape: [this.latentDim * 2],
       name: 'decoderStateInputHidden',
     });
+
     const stateInputC = tf.layers.input({
       shape: [this.latentDim * 2],
       name: 'decoderStateInputCell',
     });
 
+    const encoderOutputInput = tf.layers.input({
+      shape: [null, this.latentDim * 2],
+      name: 'encoderOutputInput',
+    });
+
     const statesInputs = [stateInputH, stateInputC];
-    let [sequenceOtput, stateH, stateC] = pretrained.lstm.apply([
-      pretrained.embeddingInputs,
-      ...statesInputs,
-    ]) as tf.SymbolicTensor[];
+    let [sequenceOutput, stateH, stateC] = decoder.lstm.apply(
+      [decoder.embeddingInputs, ...statesInputs],
+      // {
+      //   initialStates: statesInputs,
+      // },
+    ) as tf.SymbolicTensor[];
+
+    const attentionLayer = this.pretrainedAttention(
+      attention,
+      encoderOutputInput,
+      sequenceOutput,
+    );
 
     const states = [stateH, stateC];
-    const outputs = pretrained.softmax.apply(
-      sequenceOtput,
-    ) as tf.SymbolicTensor;
+    const outputs = decoder.softmax.apply(attentionLayer) as tf.SymbolicTensor;
 
     return tf.model({
-      inputs: [pretrained.inputs, ...statesInputs],
+      inputs: [decoder.inputs, encoderOutputInput, ...statesInputs],
       outputs: [outputs, ...states],
       name: 'pretrainedDecoderModel',
     });
@@ -96,11 +193,12 @@ export class Seq2seq {
       })
       .apply(inputs);
 
-    const [, forwardH, forwardC, backwardH, backwardC] = tf.layers
+    const [outputs, forwardH, forwardC, backwardH, backwardC] = tf.layers
       .bidirectional({
         layer: tf.layers.lstm({
           units: this.latentDim,
           returnState: true,
+          returnSequences: true,
           name: 'encoderLSTM',
         }) as LSTM,
       })
@@ -116,10 +214,14 @@ export class Seq2seq {
     return {
       states: [stateH, stateC],
       inputs,
+      outputs,
     };
   }
 
-  buildDecoder(encoderStates: tf.SymbolicTensor[]) {
+  buildDecoder(
+    encoderStates: tf.SymbolicTensor[],
+    encoderOutputs: tf.SymbolicTensor,
+  ): PretrainedDecoderMetadata {
     const inputs = tf.layers.input({
       shape: [null],
       name: 'decoderInputs',
@@ -143,25 +245,33 @@ export class Seq2seq {
       name: 'decoderLSTM',
     }) as LSTM;
 
-    const [decoderOutputs] = lstm.apply([
-      embeddingInputs,
-      ...encoderStates,
-    ]) as tf.Tensor[];
+    const [decoderOutputs] = lstm.apply([embeddingInputs], {
+      initialStates: encoderStates,
+    }) as tf.SymbolicTensor[];
 
-    const softMax = tf.layers.dense({
+    const { outputs: attentionOutput, ...attentionLayers } = this.attention(
+      encoderOutputs,
+      decoderOutputs,
+      this.latentDim,
+    );
+
+    const softmax = tf.layers.dense({
       units: this.numDecoderTokens,
       activation: 'softmax',
       name: 'decoderSoftmax',
     });
 
-    const denseOutputs = softMax.apply(decoderOutputs) as tf.SymbolicTensor;
+    const denseOutputs = softmax.apply(attentionOutput) as tf.SymbolicTensor;
 
     return {
-      outputs: denseOutputs,
-      inputs,
-      embeddingInputs,
-      lstm,
-      softMax,
+      decoder: {
+        inputs,
+        outputs: denseOutputs,
+        embeddingInputs,
+        lstm,
+        softmax,
+      },
+      attention: attentionLayers,
     };
   }
 }
