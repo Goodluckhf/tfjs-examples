@@ -107,9 +107,11 @@ export class Seq2seq {
       name: 'context',
     });
     const contextConcatenate = tf.layers.concatenate();
-    const tanhDense = tf.layers.dense({
-      units: lstmUnits,
-      activation: 'tanh',
+    const tanhDense = tf.layers.timeDistributed({
+      layer: tf.layers.dense({
+        units: lstmUnits,
+        activation: 'tanh',
+      }),
     });
 
     const attention = attentionSoftmax.apply(
