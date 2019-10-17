@@ -20,16 +20,16 @@ export function status(statusText) {
   document.getElementById('status').textContent = statusText;
 }
 
-export function setEnglish(text, translate) {
+export async function setEnglish(text, translate) {
   document.getElementById('englishSentence').value = text;
-  document.getElementById('frenchSentence').textContent = translate(text);
+  document.getElementById('frenchSentence').textContent = await translate(text);
 }
 
 export function setTranslationFunction(translate) {
   const englishElement = document.getElementById('englishSentence');
-  englishElement.addEventListener('input', e => {
+  englishElement.addEventListener('input', async e => {
     const inputSentence = englishElement.value;
-    document.getElementById('frenchSentence').textContent = translate(
+    document.getElementById('frenchSentence').textContent = await translate(
       inputSentence,
     );
   });

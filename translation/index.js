@@ -15,9 +15,9 @@
  * =============================================================================
  */
 
-import * as tf from '@tensorflow/tfjs';
 import * as loader from './loader';
 import * as ui from './ui';
+import { SequenceDecoder } from './sequence-decoder';
 
 const HOSTED_URLS = {
   model:
@@ -27,6 +27,8 @@ const HOSTED_URLS = {
 };
 
 const LOCAL_URLS = {
+  encoder: 'http://localhost:1235/resources/encoder/model.json',
+  decoder: 'http://localhost:1235/resources/decoder/model.json',
   model: 'http://localhost:1235/resources/model.json',
   metadata: 'http://localhost:1235/resources/metadata.json',
 };
@@ -37,10 +39,16 @@ class Translator {
    */
   async init(urls) {
     this.urls = urls;
-    const model = await loader.loadHostedPretrainedModel(urls.model);
+    this.encoderModel = await loader.loadHostedPretrainedModel(urls.encoder);
+    this.decoderModel = await loader.loadHostedPretrainedModel(urls.decoder);
     await this.loadMetadata();
-    this.prepareEncoderModel(model);
-    this.prepareDecoderModel(model);
+    this.sequenceDecoder = new SequenceDecoder({
+      reverseTargetCharIndex: this.reverseTargetCharIndex,
+      maxEncoderSeqLength: this.maxEncoderSeqLength,
+      maxDecoderSeqLength: this.maxDecoderSeqLength,
+      inputTokenIndex: this.inputTokenIndex,
+      targetTokenIndex: this.targetTokenIndex,
+    });
     return this;
   }
 
@@ -52,147 +60,31 @@ class Translator {
     this.maxEncoderSeqLength = translationMetadata['max_encoder_seq_length'];
     console.log('maxDecoderSeqLength = ' + this.maxDecoderSeqLength);
     console.log('maxEncoderSeqLength = ' + this.maxEncoderSeqLength);
+    this.numDecoderTokens = translationMetadata['decoder_token_length'];
+    this.numEncoderTokens = translationMetadata['encoder_tokens_length'];
     this.inputTokenIndex = translationMetadata['input_token_index'];
     this.targetTokenIndex = translationMetadata['target_token_index'];
+    this.latentDim = translationMetadata['latent_dim'];
+    this.embeddingDim = translationMetadata['embedding_dim'];
     this.reverseTargetCharIndex = Object.keys(this.targetTokenIndex).reduce(
       (obj, key) => ((obj[this.targetTokenIndex[key]] = key), obj),
       {},
     );
   }
 
-  prepareEncoderModel(model) {
-    this.numEncoderTokens = model.input[0].shape[2];
-    console.log('numEncoderTokens = ' + this.numEncoderTokens);
-
-    const encoderInputs = model.input[0];
-    const stateH = model.layers[2].output[1];
-    const stateC = model.layers[2].output[2];
-    const encoderStates = [stateH, stateC];
-
-    this.encoderModel = tf.model({
-      inputs: encoderInputs,
-      outputs: encoderStates,
-    });
-  }
-
-  prepareDecoderModel(model) {
-    this.numDecoderTokens = model.input[1].shape[2];
-    console.log('numDecoderTokens = ' + this.numDecoderTokens);
-
-    const stateH = model.layers[2].output[1];
-    const latentDim = stateH.shape[stateH.shape.length - 1];
-    console.log('latentDim = ' + latentDim);
-    const decoderStateInputH = tf.input({
-      shape: [latentDim],
-      name: 'decoder_state_input_h',
-    });
-    const decoderStateInputC = tf.input({
-      shape: [latentDim],
-      name: 'decoder_state_input_c',
-    });
-    const decoderStateInputs = [decoderStateInputH, decoderStateInputC];
-
-    const decoderLSTM = model.layers[3];
-    const decoderInputs = decoderLSTM.input[0];
-    const applyOutputs = decoderLSTM.apply(decoderInputs, {
-      initialState: decoderStateInputs,
-    });
-    let decoderOutputs = applyOutputs[0];
-    const decoderStateH = applyOutputs[1];
-    const decoderStateC = applyOutputs[2];
-    const decoderStates = [decoderStateH, decoderStateC];
-
-    const decoderDense = model.layers[4];
-    decoderOutputs = decoderDense.apply(decoderOutputs);
-    this.decoderModel = tf.model({
-      inputs: [decoderInputs].concat(decoderStateInputs),
-      outputs: [decoderOutputs].concat(decoderStates),
-    });
-  }
-
-  /**
-   * Encode a string (e.g., a sentence) as a Tensor3D that can be fed directly
-   * into the TensorFlow.js model.
-   */
-  encodeString(str) {
-    const strLen = str.length;
-    const encoded = tf.buffer([
-      1,
-      this.maxEncoderSeqLength,
-      this.numEncoderTokens,
-    ]);
-    for (let i = 0; i < strLen; ++i) {
-      if (i >= this.maxEncoderSeqLength) {
-        console.error(
-          'Input sentence exceeds maximum encoder sequence length: ' +
-            this.maxEncoderSeqLength,
-        );
-      }
-
-      const tokenIndex = this.inputTokenIndex[str[i]];
-      if (tokenIndex == null) {
-        console.error(
-          'Character not found in input token index: "' + tokenIndex + '"',
-        );
-      }
-      encoded.set(1, 0, i, tokenIndex);
-    }
-    return encoded.toTensor();
-  }
-
-  decodeSequence(inputSeq) {
-    // Encode the inputs state vectors.
-    let statesValue = this.encoderModel.predict(inputSeq);
-
-    // Generate empty target sequence of length 1.
-    let targetSeq = tf.buffer([1, 1, this.numDecoderTokens]);
-    // Populate the first character of the target sequence with the start
-    // character.
-    targetSeq.set(1, 0, 0, this.targetTokenIndex['\t']);
-
-    // Sample loop for a batch of sequences.
-    // (to simplify, here we assume that a batch of size 1).
-    let stopCondition = false;
-    let decodedSentence = '';
-    while (!stopCondition) {
-      const predictOutputs = this.decoderModel.predict(
-        [targetSeq.toTensor()].concat(statesValue),
-      );
-      const outputTokens = predictOutputs[0];
-      const h = predictOutputs[1];
-      const c = predictOutputs[2];
-
-      // Sample a token.
-      // We know that outputTokens.shape is [1, 1, n], so no need for slicing.
-      const logits = outputTokens.reshape([outputTokens.shape[2]]);
-      const sampledTokenIndex = logits.argMax().dataSync()[0];
-      const sampledChar = this.reverseTargetCharIndex[sampledTokenIndex];
-      decodedSentence += sampledChar;
-
-      // Exit condition: either hit max length or find stop character.
-      if (
-        sampledChar === '\n' ||
-        decodedSentence.length > this.maxDecoderSeqLength
-      ) {
-        stopCondition = true;
-      }
-
-      // Update the target sequence (of length 1).
-      targetSeq = tf.buffer([1, 1, this.numDecoderTokens]);
-      targetSeq.set(1, 0, 0, sampledTokenIndex);
-
-      // Update states.
-      statesValue = [h, c];
-    }
-
-    return decodedSentence;
-  }
-
   /** Translate the given English sentence into French. */
   translate(inputSentence) {
-    const inputSeq = this.encodeString(inputSentence.toLowerCase());
-    const decodedSentence = this.decodeSequence(inputSeq);
-    return decodedSentence;
+    const { encoderInputs: inputSeq } = this.sequenceDecoder.getXSample(
+      inputSentence.toLowerCase(),
+      '',
+    );
+
+    return this.sequenceDecoder.decode(
+      inputSeq.expandDims(),
+      this.encoderModel,
+      this.decoderModel,
+      this.targetTokenIndex['\t'],
+    );
   }
 }
 
@@ -212,13 +104,17 @@ async function setupTranslator() {
     button.style.display = 'inline-block';
   }
 
-  if (await loader.urlExists(LOCAL_URLS.model)) {
-    ui.status('Model available: ' + LOCAL_URLS.model);
+  if (
+    (await loader.urlExists(LOCAL_URLS.encoder)) &&
+    (await loader.urlExists(LOCAL_URLS.decoder))
+  ) {
+    ui.status('Encoder model available: ' + LOCAL_URLS.encoder);
+    ui.status('Decoder model available: ' + LOCAL_URLS.decoder);
     const button = document.getElementById('load-pretrained-local');
     button.addEventListener('click', async () => {
       const translator = await new Translator().init(LOCAL_URLS);
       ui.setTranslationFunction(x => translator.translate(x));
-      ui.setEnglish('Go.', x => translator.translate(x));
+      await ui.setEnglish('Go.', x => translator.translate(x));
     });
     button.style.display = 'inline-block';
   }
