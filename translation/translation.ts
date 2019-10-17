@@ -152,6 +152,8 @@ async function readData(dataFile: string, maxLength: number) {
     max_decoder_seq_length: maxDecoderSeqLength,
     encoder_tokens_length: numEncoderTokens,
     decoder_token_length: numDecoderTokens,
+    embedding_dim: args.embedding_dim,
+    latent_dim: args.latent_dim,
   };
 
   fs.writeFileSync(metadataJsonPath, JSON.stringify(metadata));
@@ -320,6 +322,14 @@ async function main() {
     attention: decoderMetadata.attention,
   };
 
+  const encoderInferenceModel = seq2seq.buildPretrainedEncoder(
+    pretrainedEncoderMetadata,
+  );
+
+  const decoderInferenceModel = seq2seq.buildPretrainedDecoder(
+    pretrainedDecoderMetadata,
+  );
+
   await model.fitDataset(trainDs, {
     validationData: validDs,
     epochs: args.epochs,
@@ -328,17 +338,24 @@ async function main() {
         updateFreq: args.logUpdateFreq,
       }),
       tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 25 }),
-      new SaveCallback(5, `file://${args.artifacts_dir}`),
-      new TestBatchCallback(sequenceDecoder, {
-        everyEpoch: args.test_every_epoch,
-        examplesLength: 2,
-        pretrainedDecoderMetadata,
-        pretrainedEncoderMetadata,
-        seq2seq,
-        targetBeginIndex: targetTokenIndex['\t'],
-        testTargetData: targetTexts,
-        testInputData: inputTexts,
-      }),
+      new SaveCallback(
+        5,
+        `file://${args.artifacts_dir}`,
+        encoderInferenceModel,
+        decoderInferenceModel,
+      ),
+      new TestBatchCallback(
+        sequenceDecoder,
+        encoderInferenceModel,
+        decoderInferenceModel,
+        {
+          everyEpoch: args.test_every_epoch,
+          examplesLength: 2,
+          targetBeginIndex: targetTokenIndex['\t'],
+          testTargetData: targetTexts,
+          testInputData: inputTexts,
+        },
+      ),
     ],
   });
 

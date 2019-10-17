@@ -1,17 +1,9 @@
 import * as tf from '@tensorflow/tfjs';
 import { Callback } from '@tensorflow/tfjs-layers';
-import {
-  PretrainedDecoderMetadata,
-  PretrainedEncoderMetadata,
-  Seq2seq,
-} from './model/seq2seq';
 import { SequenceDecoder } from './sequence-decoder';
 
 export type CallbackArgs = {
   everyEpoch: number;
-  seq2seq: Seq2seq;
-  pretrainedEncoderMetadata: PretrainedEncoderMetadata;
-  pretrainedDecoderMetadata: PretrainedDecoderMetadata;
   testInputData: string[];
   testTargetData: string[];
   examplesLength: number;
@@ -28,7 +20,12 @@ export class TestBatchCallback extends Callback {
   private readonly testInputData: string[];
   private readonly testTargetData: string[];
 
-  constructor(sequenceDecoder: SequenceDecoder, config: CallbackArgs) {
+  constructor(
+    sequenceDecoder: SequenceDecoder,
+    encoderModel: tf.LayersModel,
+    decoderModel: tf.LayersModel,
+    config: CallbackArgs,
+  ) {
     super();
     this.sequenceDecoder = sequenceDecoder;
     this.targetBeginIndex = config.targetBeginIndex;
@@ -36,12 +33,8 @@ export class TestBatchCallback extends Callback {
     this.testTargetData = config.testTargetData;
     this.everyEpoch = config.everyEpoch;
     this.examplesLength = config.examplesLength;
-    this.encoderModel = config.seq2seq.buildPretrainedEncoder(
-      config.pretrainedEncoderMetadata,
-    );
-    this.decoderModel = config.seq2seq.buildPretrainedDecoder(
-      config.pretrainedDecoderMetadata,
-    );
+    this.encoderModel = encoderModel;
+    this.decoderModel = decoderModel;
   }
 
   async onEpochEnd(epoch: number) {

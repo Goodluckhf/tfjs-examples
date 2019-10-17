@@ -1,13 +1,23 @@
-import { Callback } from '@tensorflow/tfjs-layers';
+import { Callback, LayersModel } from '@tensorflow/tfjs-layers';
+import * as tf from '@tensorflow/tfjs';
 
 export class SaveCallback extends Callback {
-  private readonly file: string;
+  private readonly path: string;
   private readonly everyEpoch: number;
+  private readonly encoderModel: LayersModel;
+  private readonly decoderModel: LayersModel;
 
-  constructor(everyEpoch = 1, file: string) {
+  constructor(
+    everyEpoch = 1,
+    path: string,
+    encoderModel: tf.LayersModel,
+    decoderModel: tf.LayersModel,
+  ) {
     super();
-    this.file = file;
+    this.path = path;
     this.everyEpoch = everyEpoch;
+    this.encoderModel = encoderModel;
+    this.decoderModel = decoderModel;
   }
 
   async onEpochEnd(epoch: number) {
@@ -15,6 +25,10 @@ export class SaveCallback extends Callback {
       return;
     }
     console.warn('Saving model...');
-    await this.model.save(this.file);
+    await Promise.all([
+      this.model.save(this.path),
+      this.encoderModel.save(`${this.path}/encoder`),
+      this.decoderModel.save(`${this.path}/decoder`),
+    ]);
   }
 }
