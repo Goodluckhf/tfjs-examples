@@ -319,7 +319,6 @@ async function main() {
 
   const pretrainedDecoderMetadata: PretrainedDecoderMetadata = {
     decoder: decoderMetadata.decoder,
-    attention: decoderMetadata.attention,
   };
 
   const encoderInferenceModel = seq2seq.buildPretrainedEncoder(
@@ -360,7 +359,7 @@ async function main() {
   });
 
   await model.save(`file://${args.artifacts_dir}`);
-
+  console.log(123);
   const encoderModel = seq2seq.buildPretrainedEncoder(
     pretrainedEncoderMetadata,
   );

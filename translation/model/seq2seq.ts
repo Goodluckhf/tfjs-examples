@@ -1,5 +1,6 @@
 import * as tf from '@tensorflow/tfjs';
 import { LSTM } from '@tensorflow/tfjs-layers/dist/layers/recurrent';
+import { AttentionLstm } from '../attention-lstm';
 
 export type Seq2seqArgs = {
   numEncoderTokens: number;
@@ -27,10 +28,9 @@ export type PretrainedDecoderMetadata = {
     inputs: tf.SymbolicTensor;
     outputs: tf.SymbolicTensor;
     embeddingInputs: tf.SymbolicTensor;
-    lstm: tf.layers.Layer;
+    lstm: AttentionLstm;
     softmax: tf.layers.Layer;
   };
-  attention: PretrainedAttentionMetadata;
 };
 
 export class Seq2seq {
@@ -140,7 +140,7 @@ export class Seq2seq {
     };
   }
 
-  buildPretrainedDecoder({ attention, decoder }: PretrainedDecoderMetadata) {
+  buildPretrainedDecoder({ decoder }: PretrainedDecoderMetadata) {
     const stateInputH = tf.layers.input({
       shape: [this.latentDim * 2],
       name: 'decoderStateInputHidden',
@@ -158,20 +158,21 @@ export class Seq2seq {
 
     const statesInputs = [stateInputH, stateInputC];
     let [sequenceOutput, stateH, stateC] = decoder.lstm.apply(
-      [decoder.embeddingInputs, ...statesInputs],
+      // @ts-ignore
+      [decoder.embeddingInputs, encoderOutputInput, ...statesInputs],
       // {
-      //   initialStates: statesInputs,
+      //   initialState: statesInputs,
       // },
     ) as tf.SymbolicTensor[];
 
-    const attentionLayer = this.pretrainedAttention(
-      attention,
-      encoderOutputInput,
-      sequenceOutput,
-    );
+    // const attentionLayer = this.pretrainedAttention(
+    //   attention,
+    //   encoderOutputInput,
+    //   sequenceOutput,
+    // );
 
     const states = [stateH, stateC];
-    const outputs = decoder.softmax.apply(attentionLayer) as tf.SymbolicTensor;
+    const outputs = decoder.softmax.apply(sequenceOutput) as tf.SymbolicTensor;
 
     return tf.model({
       inputs: [decoder.inputs, encoderOutputInput, ...statesInputs],
@@ -240,22 +241,26 @@ export class Seq2seq {
     // We set up our decoder to return full output sequences,
     // and to return internal states as well. We don't use the
     // return states in the training model, but we will use them in inference.
-    const lstm = tf.layers.lstm({
+    const lstm = new AttentionLstm({
       units: this.latentDim * 2,
       returnSequences: true,
       returnState: true,
       name: 'decoderLSTM',
-    }) as LSTM;
+    }) as AttentionLstm;
 
-    const [decoderOutputs] = lstm.apply([embeddingInputs], {
-      initialStates: encoderStates,
-    }) as tf.SymbolicTensor[];
+    // @ts-ignore
+    const [decoderOutputs] = lstm.apply(
+      [embeddingInputs, encoderOutputs, ...encoderStates],
+      {
+        //initialState: encoderStates,
+      },
+    ) as tf.SymbolicTensor[];
 
-    const { outputs: attentionOutput, ...attentionLayers } = this.attention(
-      encoderOutputs,
-      decoderOutputs,
-      this.latentDim,
-    );
+    // const { outputs: attentionOutput, ...attentionLayers } = this.attention(
+    //   encoderOutputs,
+    //   decoderOutputs,
+    //   this.latentDim,
+    // );
 
     const softmax = tf.layers.dense({
       units: this.numDecoderTokens,
@@ -263,7 +268,7 @@ export class Seq2seq {
       name: 'decoderSoftmax',
     });
 
-    const denseOutputs = softmax.apply(attentionOutput) as tf.SymbolicTensor;
+    const denseOutputs = softmax.apply(decoderOutputs) as tf.SymbolicTensor;
 
     return {
       decoder: {
@@ -273,7 +278,6 @@ export class Seq2seq {
         lstm,
         softmax,
       },
-      attention: attentionLayers,
     };
   }
 }
