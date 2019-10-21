@@ -17,6 +17,9 @@
 
 import * as tf from '@tensorflow/tfjs';
 import * as ui from './ui';
+import { AttentionLstm } from './attention-lstm';
+import { AttentionLstmCell } from './attention-lstm-cell';
+import { LongauAttention } from './model/longau-attention';
 
 /**
  * Test whether a given URL is retrievable.

@@ -160,7 +160,7 @@ export class AttentionLstmCell extends RNNCell {
     inputShape = getExactlyOneShape(inputShape);
     const inputDim = inputShape[inputShape.length - 1];
     this.kernel = this.addWeight(
-      'kernel',
+      'attentionLstmKernel',
       [inputDim, this.units * 4],
       // @ts-ignore
       null,
@@ -170,7 +170,7 @@ export class AttentionLstmCell extends RNNCell {
       this.kernelConstraint,
     );
     this.recurrentKernel = this.addWeight(
-      'recurrent_kernel',
+      'attentionLstmRecurrentKernel',
       [this.units, this.units * 4],
       // @ts-ignore
       null,
@@ -203,7 +203,7 @@ export class AttentionLstmCell extends RNNCell {
         biasInitializer = this.biasInitializer;
       }
       this.bias = this.addWeight(
-        'bias',
+        'attentionLstmBias',
         [this.units * 4],
         // @ts-ignore
         null,
