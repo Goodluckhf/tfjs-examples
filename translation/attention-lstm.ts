@@ -109,7 +109,11 @@ export class AttentionLstm extends tf.layers.Layer {
     // Allow cell (if RNNCell Layer) to build before we set or validate
     // stateSpec.
     const stepInputShape = [inputShape[0]].concat(inputShape.slice(2));
-    this.cell.build(stepInputShape);
+    if (!stepInputShape[1]) {
+      throw new Error('stepInputShape');
+    }
+    // @ts-ignore
+    this.cell.build([null, stepInputShape[1] + this.latentDim]);
     this.attentionLayer.build([null, null, this.latentDim]);
     this.wc.build([null, this.latentDim * 2]);
     // Set or validate stateSpec.
@@ -196,11 +200,10 @@ export class AttentionLstm extends tf.layers.Layer {
         // `inputs` and `states` are concatenated to form a single `Array` of
         // `tf.Tensor`s as the input to `cell.call()`.
         const context = this.attentionLayer.call([states[0], encoderInputs]);
-        const lstmOut = tf.concat([context.squeeze([1]), states[0]], 1);
-        const out = this.wc.call(lstmOut, {}) as tf.Tensor;
+        const inputWithAttention = tf.concat([context, cellInputs], -1);
 
         const outputs = this.cell.call(
-          [cellInputs].concat(out, states[1]),
+          [inputWithAttention].concat(states),
           cellCallKwargs,
         ) as tf.Tensor[];
         // Marshall the return value into output and new states.
