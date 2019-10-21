@@ -9,8 +9,9 @@
     "node": ">=8.9.0"
   },
   "dependencies": {
-    "@tensorflow/tfjs-node": "1.2.11",
-    "@tensorflow/tfjs-node-gpu": "1.2.11",
+    "@tensorflow/tfjs-node": "1.2.9",
+    "@tensorflow/tfjs": "1.2.9",
+    "@tensorflow/tfjs-node-gpu": "1.2.9",
     "vega-embed": "^3.0.0"
   },
   "scripts": {
