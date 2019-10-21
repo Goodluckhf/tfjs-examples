@@ -1,5 +1,7 @@
 import * as tf from '@tensorflow/tfjs';
 import { Layer, LayerArgs } from '@tensorflow/tfjs-layers/dist/engine/topology';
+import { LayerVariable } from '@tensorflow/tfjs';
+import { nameScope } from '@tensorflow/tfjs-layers/dist/common';
 
 export interface BaseDenseAttentionArgs extends LayerArgs {
   units: number;
@@ -20,16 +22,39 @@ export class LongauAttention extends Layer {
       units: args.units,
       name: 'AttentionW2',
     });
-    this.v = this.w2 = tf.layers.dense({
+    this.v = tf.layers.dense({
       units: 1,
       name: 'AttentionV',
     });
   }
 
   build(inputShape: Array<number | null> | tf.Shape[]): void {
-    this.w1.build(inputShape);
-    this.w2.build(inputShape);
-    this.v.build([1]);
+    nameScope('LongauAttention_w1', () => {
+      this.w1.build(inputShape);
+    });
+    nameScope('LongauAttention_w2', () => {
+      this.w2.build(inputShape);
+    });
+    nameScope('LongauAttention_v', () => {
+      // @ts-ignore
+      this.v.build([null, inputShape[inputShape.length - 1]]);
+    });
+  }
+
+  get trainableWeights(): LayerVariable[] {
+    if (!this.trainable) {
+      return [];
+    }
+    // Porting Note: In TypeScript, `this` is always an instance of `Layer`.
+    return [...this.w1.trainableWeights, ...this.w2.trainableWeights, ...this.v.trainableWeights];
+  }
+
+  get nonTrainableWeights(): LayerVariable[] {
+    // Porting Note: In TypeScript, `this` is always an instance of `Layer`.
+    if (!this.trainable) {
+      return [...this.w1.weights, ...this.w2.weights, ...this.v.weights];
+    }
+    return [...this.w1.nonTrainableWeights, ...this.w2.nonTrainableWeights, ...this.v.nonTrainableWeights];
   }
 
   call(inputs: tf.Tensor[]) {

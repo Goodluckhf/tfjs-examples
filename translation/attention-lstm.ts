@@ -29,17 +29,29 @@ import { Shape } from '@tensorflow/tfjs-layers/dist/keras_format/common';
 import { isArrayOfShapes } from '@tensorflow/tfjs-layers/dist/utils/types_utils';
 import { InputSpec } from '@tensorflow/tfjs-layers/dist/engine/topology';
 import { util } from '@tensorflow/tfjs';
+import { Tensor } from '@tensorflow/tfjs';
+import * as tfc from '@tensorflow/tfjs-core';
+import * as math_utils from '@tensorflow/tfjs-layers/dist/utils/math_utils';
+import { tidy } from '@tensorflow/tfjs';
+import { AttributeError } from '@tensorflow/tfjs-layers/dist/errors';
+import { serialization } from '@tensorflow/tfjs';
+import * as K from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
+import { LayerVariable } from '@tensorflow/tfjs-layers/dist/variables';
 
 export class AttentionLstm extends tf.layers.Layer {
   /** @nocollapse */
   static className = 'AttentionLstm';
   private readonly attentionLayer: LongauAttention;
   private readonly wc: tf.layers.Layer;
-  private cell: RNNCell;
+  private readonly cell: RNNCell;
   private readonly returnState: boolean;
   private readonly latentDim: number;
+
   // @ts-ignore
   private stateSpec: InputSpec[];
+
+  private states_: Tensor[];
+  private keptStates: Tensor[][];
   private readonly returnSequences: boolean;
 
   constructor(args: LSTMLayerArgs) {
@@ -58,10 +70,72 @@ export class AttentionLstm extends tf.layers.Layer {
       new InputSpec({ ndim: 2 }),
       new InputSpec({ ndim: 2 }),
     ];
+    this.supportsMasking = true;
+    // @ts-ignore
+    this.stateSpec = null;
+    // @ts-ignore
+    this.states_ = null;
     this.cell = new AttentionLstmCell(args);
     this.latentDim = args.units;
+    this.keptStates = [];
     this.attentionLayer = new LongauAttention({ units: args.units });
     this.wc = tf.layers.dense({ units: args.units, activation: 'tanh' });
+  }
+
+  getStates(): Tensor[] {
+    if (this.states_ == null) {
+      const numStates = Array.isArray(this.cell.stateSize)
+        ? this.cell.stateSize.length
+        : 1;
+      // @ts-ignore
+      return math_utils.range(0, numStates).map(x => null);
+    } else {
+      return this.states_;
+    }
+  }
+
+  setStates(states: Tensor[]): void {
+    this.states_ = states;
+  }
+
+  get states(): Tensor[] {
+    if (this.states_ == null) {
+      const numStates = Array.isArray(this.cell.stateSize)
+        ? this.cell.stateSize.length
+        : 1;
+      const output: Tensor[] = [];
+      for (let i = 0; i < numStates; ++i) {
+        // @ts-ignore
+        output.push(null);
+      }
+      return output;
+    } else {
+      return this.states_;
+    }
+  }
+
+  set states(s: Tensor[]) {
+    this.states_ = s;
+  }
+
+  computeMask(
+    _: Tensor | Tensor[],
+    mask?: Tensor | Tensor[],
+  ): Tensor | Tensor[] {
+    // @ts-ignore
+    return tfc.tidy(() => {
+      if (Array.isArray(mask)) {
+        mask = mask[0];
+      }
+      const outputMask = this.returnSequences ? mask : null;
+
+      if (this.returnState) {
+        const stateMask = this.states.map(() => null);
+        return [outputMask].concat(stateMask);
+      } else {
+        return outputMask;
+      }
+    });
   }
 
   computeOutputShape(inputShape: Shape | Shape[]): Shape | Shape[] {
@@ -146,6 +220,92 @@ export class AttentionLstm extends tf.layers.Layer {
     if (this.stateful) {
       this.resetStates();
     }
+  }
+
+  resetStates(states?: Tensor | Tensor[], training = false): void {
+    tidy(() => {
+      if (!this.stateful) {
+        throw new AttributeError(
+          'Cannot call resetStates() on an RNN Layer that is not stateful.',
+        );
+      }
+
+      // @ts-ignore
+      const batchSize = this.inputSpec[0].shape[0];
+      if (batchSize == null) {
+        throw new ValueError(
+          'If an RNN is stateful, it needs to know its batch size. Specify ' +
+            'the batch size of your input tensors: \n' +
+            '- If using a Sequential model, specify the batch size by ' +
+            'passing a `batchInputShape` option to your first layer.\n' +
+            '- If using the functional API, specify the batch size by ' +
+            'passing a `batchShape` option to your Input layer.',
+        );
+      }
+      // Initialize state if null.
+      if (this.states_ == null) {
+        if (Array.isArray(this.cell.stateSize)) {
+          this.states_ = this.cell.stateSize.map(dim =>
+            tfc.zeros([batchSize, dim]),
+          );
+        } else {
+          this.states_ = [tfc.zeros([batchSize, this.cell.stateSize])];
+        }
+      } else if (states == null) {
+        // Dispose old state tensors.
+        tfc.dispose(this.states_);
+        // For stateful RNNs, fully dispose kept old states.
+        if (this.keptStates != null) {
+          tfc.dispose(this.keptStates);
+          this.keptStates = [];
+        }
+
+        if (Array.isArray(this.cell.stateSize)) {
+          this.states_ = this.cell.stateSize.map(dim =>
+            tfc.zeros([batchSize, dim]),
+          );
+        } else {
+          this.states_[0] = tfc.zeros([batchSize, this.cell.stateSize]);
+        }
+      } else {
+        if (!Array.isArray(states)) {
+          states = [states];
+        }
+        if (states.length !== this.states_.length) {
+          throw new ValueError(
+            `Layer ${this.name} expects ${this.states_.length} state(s), ` +
+              `but it received ${states.length} state value(s). Input ` +
+              `received: ${states}`,
+          );
+        }
+
+        if (training === true) {
+          // Store old state tensors for complete disposal later, i.e., during
+          // the next no-arg call to this method. We do not dispose the old
+          // states immediately because that BPTT (among other things) require
+          // them.
+          this.keptStates.push(this.states_.slice());
+        } else {
+          tfc.dispose(this.states_);
+        }
+
+        for (let index = 0; index < this.states_.length; ++index) {
+          const value = states[index];
+          const dim = Array.isArray(this.cell.stateSize)
+            ? this.cell.stateSize[index]
+            : this.cell.stateSize;
+          const expectedShape = [batchSize, dim];
+          if (!util.arraysEqual(value.shape, expectedShape)) {
+            throw new ValueError(
+              `State ${index} is incompatible with layer ${this.name}: ` +
+                `expected shape=${expectedShape}, received shape=${value.shape}`,
+            );
+          }
+          this.states_[index] = value;
+        }
+      }
+      this.states_ = this.states_.map(state => tfc.keep(state.clone()));
+    });
   }
 
   call(
@@ -309,6 +469,64 @@ export class AttentionLstm extends tf.layers.Layer {
     return (this.cell as AttentionLstmCell).implementation;
   }
 
+  getInitialState(inputs: Tensor): Tensor[] {
+    return tidy(() => {
+      // Build an all-zero tensor of shape [samples, outputDim].
+      // [Samples, timeSteps, inputDim].
+      let initialState = tfc.zeros(inputs.shape);
+      // [Samples].
+      initialState = tfc.sum(initialState, [1, 2]);
+      initialState = K.expandDims(initialState); // [Samples, 1].
+
+      if (Array.isArray(this.cell.stateSize)) {
+        return this.cell.stateSize.map(dim =>
+          dim > 1 ? K.tile(initialState, [1, dim]) : initialState,
+        );
+      } else {
+        return this.cell.stateSize > 1
+          ? [K.tile(initialState, [1, this.cell.stateSize])]
+          : [initialState];
+      }
+    });
+  }
+
+  get trainableWeights(): LayerVariable[] {
+    if (!this.trainable) {
+      return [];
+    }
+    // Porting Note: In TypeScript, `this` is always an instance of `Layer`.
+    return [...this.cell.trainableWeights, ...this.attentionLayer.trainableWeights, ...this.wc.trainableWeights];
+  }
+
+  get nonTrainableWeights(): LayerVariable[] {
+    // Porting Note: In TypeScript, `this` is always an instance of `Layer`.
+    if (!this.trainable) {
+      return [...this.cell.weights, ...this.attentionLayer.weights, ...this.wc.weights];
+    }
+    return [...this.cell.nonTrainableWeights, ...this.attentionLayer.nonTrainableWeights, ...this.wc.nonTrainableWeights];
+  }
+
+  setFastWeightInitDuringBuild(value: boolean) {
+    super.setFastWeightInitDuringBuild(value);
+    if (this.cell != null) {
+      this.cell.setFastWeightInitDuringBuild(value);
+    }
+  }
+
+  private getRNNConfig(): serialization.ConfigDict {
+    const config: serialization.ConfigDict = {
+      returnSequences: this.returnSequences,
+      returnState: this.returnState,
+      stateful: this.stateful,
+    };
+    const cellConfig = this.cell.getConfig();
+    config['cell'] = {
+      className: this.cell.getClassName(),
+      config: cellConfig,
+    } as serialization.ConfigDictValue;
+    return config;
+  }
+
   getConfig(): tf.serialization.ConfigDict {
     const config: tf.serialization.ConfigDict = {
       units: this.units,
@@ -331,9 +549,9 @@ export class AttentionLstm extends tf.layers.Layer {
       implementation: this.implementation,
     };
     const baseConfig = super.getConfig();
+    const rnnConfig = this.getRNNConfig();
     delete baseConfig['cell'];
-    Object.assign(config, baseConfig);
-    return config;
+    return { ...config, ...rnnConfig, ...baseConfig };
   }
 
   /** @nocollapse */

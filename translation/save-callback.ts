@@ -26,9 +26,9 @@ export class SaveCallback extends Callback {
     }
     console.warn('Saving model...');
     await Promise.all([
-      this.model.save(this.path),
-      this.encoderModel.save(`${this.path}/encoder`),
-      this.decoderModel.save(`${this.path}/decoder`),
+      this.model.save(this.path, {trainableOnly: true, includeOptimizer: true}),
+      this.encoderModel.save(`${this.path}/encoder`, {trainableOnly: true}),
+      this.decoderModel.save(`${this.path}/decoder`,{trainableOnly: true}),
     ]);
   }
 }

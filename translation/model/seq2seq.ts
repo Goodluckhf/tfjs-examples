@@ -114,6 +114,7 @@ export class Seq2seq {
           returnSequences: true,
           name: 'encoderLSTM',
         }) as LSTM,
+        name: 'biLSTM',
       })
       .apply(embeddingInputs) as tf.SymbolicTensor[];
 

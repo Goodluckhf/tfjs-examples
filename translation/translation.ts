@@ -360,7 +360,6 @@ async function main() {
     ],
   });
 
-  await model.save(`file://${args.artifacts_dir}`);
 
   const encoderModel = seq2seq.buildPretrainedEncoder(
     pretrainedEncoderMetadata,
@@ -368,6 +367,10 @@ async function main() {
   const decoderModel = seq2seq.buildPretrainedDecoder(
     pretrainedDecoderMetadata,
   );
+
+  await model.save(`file://${args.artifacts_dir}`, {trainableOnly: true, includeOptimizer: true});
+  await encoderModel.save(`file://${args.artifacts_dir}/encoder`, {trainableOnly: true});
+  await decoderModel.save(`file://${args.artifacts_dir}/decoder`, {trainableOnly: true});
   encoderModel.summary(120);
   decoderModel.summary(120);
   // Reverse-lookup token index to decode sequences back to
