@@ -15,19 +15,12 @@ export type PretrainedEncoderMetadata = {
   outputs: tf.SymbolicTensor[];
 };
 
-export type PretrainedAttentionMetadata = {
-  attentionSoftmax: tf.layers.Layer;
-  attentionDot: tf.layers.Layer;
-  contextDot: tf.layers.Layer;
-  contextConcatenate: tf.layers.Layer;
-  tanhDense: tf.layers.Layer;
-};
-
 export type PretrainedDecoderMetadata = {
   decoder: {
     inputs: tf.SymbolicTensor;
     outputs: tf.SymbolicTensor;
     embeddingInputs: tf.SymbolicTensor;
+    batchNormalization: tf.layers.Layer;
     lstm: AttentionLstm;
     softmax: tf.layers.Layer;
   };
@@ -64,82 +57,6 @@ export class Seq2seq {
     });
   }
 
-  pretrainedAttention(
-    {
-      attentionSoftmax,
-      attentionDot,
-      contextDot,
-      contextConcatenate,
-      tanhDense,
-    }: PretrainedAttentionMetadata,
-    encoderOutput: tf.SymbolicTensor,
-    decoderOutput: tf.SymbolicTensor,
-  ) {
-    const attention = attentionSoftmax.apply(
-      attentionDot.apply([decoderOutput, encoderOutput]),
-    ) as tf.SymbolicTensor;
-
-    const context = contextDot.apply([
-      attention,
-      encoderOutput,
-    ]) as tf.SymbolicTensor;
-
-    const decoderCombinedContext = contextConcatenate.apply([
-      context,
-      decoderOutput,
-    ]);
-
-    return tanhDense.apply(decoderCombinedContext);
-  }
-
-  attention(
-    encoderOutput: tf.SymbolicTensor,
-    decoderOutput: tf.SymbolicTensor,
-    lstmUnits: number,
-  ) {
-    const attentionDot = tf.layers.dot({ axes: [2, 2] });
-    const attentionSoftmax = tf.layers.activation({
-      activation: 'softmax',
-      name: 'Attention',
-    });
-    const contextDot = tf.layers.dot({
-      axes: [2, 1],
-      name: 'context',
-    });
-    const contextConcatenate = tf.layers.concatenate();
-    const tanhDense = tf.layers.timeDistributed({
-      layer: tf.layers.dense({
-        units: lstmUnits,
-        activation: 'tanh',
-      }),
-    });
-
-    const attention = attentionSoftmax.apply(
-      attentionDot.apply([decoderOutput, encoderOutput]),
-    ) as tf.SymbolicTensor;
-
-    const context = contextDot.apply([
-      attention,
-      encoderOutput,
-    ]) as tf.SymbolicTensor;
-
-    const decoderCombinedContext = contextConcatenate.apply([
-      context,
-      decoderOutput,
-    ]);
-
-    const outputs = tanhDense.apply(decoderCombinedContext);
-
-    return {
-      attentionDot,
-      attentionSoftmax,
-      contextDot,
-      contextConcatenate,
-      tanhDense,
-      outputs,
-    };
-  }
-
   buildPretrainedDecoder({ decoder }: PretrainedDecoderMetadata) {
     const stateInputH = tf.layers.input({
       shape: [this.latentDim * 2],
@@ -157,22 +74,15 @@ export class Seq2seq {
     });
 
     const statesInputs = [stateInputH, stateInputC];
-    let [sequenceOutput, stateH, stateC] = decoder.lstm.apply(
-      // @ts-ignore
-      [decoder.embeddingInputs, encoderOutputInput, ...statesInputs],
-      // {
-      //   initialState: statesInputs,
-      // },
-    ) as tf.SymbolicTensor[];
+    let [sequenceOutput, stateH, stateC] = decoder.lstm.apply([
+      decoder.embeddingInputs,
+      encoderOutputInput,
+      ...statesInputs,
+    ]) as tf.SymbolicTensor[];
 
-    // const attentionLayer = this.pretrainedAttention(
-    //   attention,
-    //   encoderOutputInput,
-    //   sequenceOutput,
-    // );
-
+    const normalizedOut = decoder.batchNormalization.apply(sequenceOutput);
     const states = [stateH, stateC];
-    const outputs = decoder.softmax.apply(sequenceOutput) as tf.SymbolicTensor;
+    const outputs = decoder.softmax.apply(normalizedOut) as tf.SymbolicTensor;
 
     return tf.model({
       inputs: [decoder.inputs, encoderOutputInput, ...statesInputs],
@@ -233,6 +143,7 @@ export class Seq2seq {
     const embeddingInputs = tf.layers
       .embedding({
         inputDim: this.numDecoderTokens,
+        maskZero: true,
         outputDim: this.embeddingDim,
         name: 'decoderEmbedding',
       })
@@ -248,19 +159,16 @@ export class Seq2seq {
       name: 'decoderLSTM',
     }) as AttentionLstm;
 
-    // @ts-ignore
-    const [decoderOutputs] = lstm.apply(
-      [embeddingInputs, encoderOutputs, ...encoderStates],
-      {
-        //initialState: encoderStates,
-      },
-    ) as tf.SymbolicTensor[];
+    const [decoderOutputs] = lstm.apply([
+      embeddingInputs,
+      encoderOutputs,
+      ...encoderStates,
+    ]) as tf.SymbolicTensor[];
 
-    // const { outputs: attentionOutput, ...attentionLayers } = this.attention(
-    //   encoderOutputs,
-    //   decoderOutputs,
-    //   this.latentDim,
-    // );
+    const batchNormalization = tf.layers.batchNormalization({
+      name: 'batchNormalize',
+    });
+    const normalizedOut = batchNormalization.apply(decoderOutputs);
 
     const softmax = tf.layers.dense({
       units: this.numDecoderTokens,
@@ -268,13 +176,14 @@ export class Seq2seq {
       name: 'decoderSoftmax',
     });
 
-    const denseOutputs = softmax.apply(decoderOutputs) as tf.SymbolicTensor;
+    const denseOutputs = softmax.apply(normalizedOut) as tf.SymbolicTensor;
 
     return {
       decoder: {
         inputs,
         outputs: denseOutputs,
         embeddingInputs,
+        batchNormalization,
         lstm,
         softmax,
       },

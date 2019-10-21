@@ -54,10 +54,12 @@ async function readData(dataFile: string, maxLength: number) {
   const targetTexts: string[] = [];
 
   const inputCharacters = new Set<string>([
+    '\v', // PAD
     '\r', // UNK
   ]);
 
   const targetCharacters = new Set<string>([
+    '\v', // PAD
     '\r', // UNK
     '\t', // SOS
     '\n', // EOS
@@ -359,7 +361,7 @@ async function main() {
   });
 
   await model.save(`file://${args.artifacts_dir}`);
-  console.log(123);
+
   const encoderModel = seq2seq.buildPretrainedEncoder(
     pretrainedEncoderMetadata,
   );
