@@ -195,15 +195,16 @@ export class AttentionLstm extends tf.layers.Layer {
       const step = (cellInputs: tf.Tensor, states: tf.Tensor[]) => {
         // `inputs` and `states` are concatenated to form a single `Array` of
         // `tf.Tensor`s as the input to `cell.call()`.
+        const context = this.attentionLayer.call([states[0], encoderInputs]);
+        const lstmOut = tf.concat([context.squeeze([1]), states[0]], 1);
+        const out = this.wc.call(lstmOut, {}) as tf.Tensor;
+
         const outputs = this.cell.call(
-          [cellInputs].concat(states),
+          [cellInputs].concat(out, states[1]),
           cellCallKwargs,
         ) as tf.Tensor[];
-        const context = this.attentionLayer.call([outputs[1], encoderInputs]);
-        const lstmOut = tf.concat([context.squeeze([1]), outputs[0]], 1);
-        const out = this.wc.call(lstmOut, {});
         // Marshall the return value into output and new states.
-        return [out, outputs.slice(1)] as [tf.Tensor, tf.Tensor[]];
+        return [outputs[0], outputs.slice(1)] as [tf.Tensor, tf.Tensor[]];
       };
 
       // TODO(cais): Add support for constants.
