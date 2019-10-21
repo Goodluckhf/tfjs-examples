@@ -20,7 +20,6 @@ export type PretrainedDecoderMetadata = {
     inputs: tf.SymbolicTensor;
     outputs: tf.SymbolicTensor;
     embeddingInputs: tf.SymbolicTensor;
-    batchNormalization: tf.layers.Layer;
     lstm: AttentionLstm;
     softmax: tf.layers.Layer;
   };
@@ -80,9 +79,8 @@ export class Seq2seq {
       ...statesInputs,
     ]) as tf.SymbolicTensor[];
 
-    const normalizedOut = decoder.batchNormalization.apply(sequenceOutput);
     const states = [stateH, stateC];
-    const outputs = decoder.softmax.apply(normalizedOut) as tf.SymbolicTensor;
+    const outputs = decoder.softmax.apply(sequenceOutput) as tf.SymbolicTensor;
 
     return tf.model({
       inputs: [decoder.inputs, encoderOutputInput, ...statesInputs],
@@ -166,10 +164,6 @@ export class Seq2seq {
       ...encoderStates,
     ]) as tf.SymbolicTensor[];
 
-    const batchNormalization = tf.layers.batchNormalization({
-      name: 'batchNormalize',
-    });
-    const normalizedOut = batchNormalization.apply(decoderOutputs);
 
     const softmax = tf.layers.dense({
       units: this.numDecoderTokens,
@@ -177,14 +171,13 @@ export class Seq2seq {
       name: 'decoderSoftmax',
     });
 
-    const denseOutputs = softmax.apply(normalizedOut) as tf.SymbolicTensor;
+    const denseOutputs = softmax.apply(decoderOutputs) as tf.SymbolicTensor;
 
     return {
       decoder: {
         inputs,
         outputs: denseOutputs,
         embeddingInputs,
-        batchNormalization,
         lstm,
         softmax,
       },
