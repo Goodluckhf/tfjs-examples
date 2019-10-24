@@ -340,7 +340,7 @@ async function main() {
       }),
       tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 25 }),
       new SaveCallback(
-        5,
+        2,
         `file://${args.artifacts_dir}`,
         encoderInferenceModel,
         decoderInferenceModel,
@@ -351,7 +351,7 @@ async function main() {
         decoderInferenceModel,
         {
           everyEpoch: args.test_every_epoch,
-          examplesLength: 2,
+          examplesLength: 1,
           targetBeginIndex: targetTokenIndex['\t'],
           testTargetData: targetTexts,
           testInputData: inputTexts,
@@ -360,7 +360,6 @@ async function main() {
     ],
   });
 
-
   const encoderModel = seq2seq.buildPretrainedEncoder(
     pretrainedEncoderMetadata,
   );
@@ -368,9 +367,16 @@ async function main() {
     pretrainedDecoderMetadata,
   );
 
-  await model.save(`file://${args.artifacts_dir}`, {trainableOnly: true, includeOptimizer: true});
-  await encoderModel.save(`file://${args.artifacts_dir}/encoder`, {trainableOnly: true});
-  await decoderModel.save(`file://${args.artifacts_dir}/decoder`, {trainableOnly: true});
+  await model.save(`file://${args.artifacts_dir}`, {
+    trainableOnly: true,
+    includeOptimizer: true,
+  });
+  await encoderModel.save(`file://${args.artifacts_dir}/encoder`, {
+    trainableOnly: true,
+  });
+  await decoderModel.save(`file://${args.artifacts_dir}/decoder`, {
+    trainableOnly: true,
+  });
   encoderModel.summary(120);
   decoderModel.summary(120);
   // Reverse-lookup token index to decode sequences back to

@@ -7,6 +7,11 @@ import { Kwargs } from '@tensorflow/tfjs-layers/dist/types';
 import { nameScope } from '@tensorflow/tfjs-layers/dist/common';
 import { batchGetValue } from '@tensorflow/tfjs-layers/dist/variables';
 import { deserialize } from '@tensorflow/tfjs-layers/dist/layers/serialization';
+import { Activation } from '@tensorflow/tfjs-layers/dist/activations';
+import { AttentionLstmCell } from './attention-lstm-cell';
+import { Initializer } from '@tensorflow/tfjs-layers/dist/initializers';
+import { Regularizer } from '@tensorflow/tfjs-layers/dist/regularizers';
+import { Constraint } from '@tensorflow/tfjs-layers/dist/constraints';
 
 export class StackedResidualLstmCell extends RNNCell {
   /** @nocollapse */
@@ -121,6 +126,71 @@ export class StackedResidualLstmCell extends RNNCell {
 
   get stateSize() {
     return this.cells[0].stateSize;
+  }
+
+  get activation(): Activation {
+    return (this.cells[0] as AttentionLstmCell).activation;
+  }
+
+  get recurrentActivation(): Activation {
+    return (this.cells[0] as AttentionLstmCell).recurrentActivation;
+  }
+
+  get useBias(): boolean {
+    return (this.cells[0] as AttentionLstmCell).useBias;
+  }
+
+  get kernelInitializer(): Initializer {
+    return (this.cells[0] as AttentionLstmCell).kernelInitializer;
+  }
+
+  get recurrentInitializer(): Initializer {
+    return (this.cells[0] as AttentionLstmCell).recurrentInitializer;
+  }
+
+  get biasInitializer(): Initializer {
+    return (this.cells[0] as AttentionLstmCell).biasInitializer;
+  }
+
+  get unitForgetBias(): boolean {
+    // @ts-ignore
+    return (this.cells[0] as AttentionLstmCell).unitForgetBias;
+  }
+
+  get kernelRegularizer(): Regularizer {
+    return (this.cells[0] as AttentionLstmCell).kernelRegularizer;
+  }
+
+  get recurrentRegularizer(): Regularizer {
+    return (this.cells[0] as AttentionLstmCell).recurrentRegularizer;
+  }
+
+  get biasRegularizer(): Regularizer {
+    return (this.cells[0] as AttentionLstmCell).biasRegularizer;
+  }
+
+  get kernelConstraint(): Constraint {
+    return (this.cells[0] as AttentionLstmCell).kernelConstraint;
+  }
+
+  get recurrentConstraint(): Constraint {
+    return (this.cells[0] as AttentionLstmCell).recurrentConstraint;
+  }
+
+  get biasConstraint(): Constraint {
+    return (this.cells[0] as AttentionLstmCell).biasConstraint;
+  }
+
+  get dropout(): number {
+    return (this.cells[0] as AttentionLstmCell).dropout;
+  }
+
+  get recurrentDropout(): number {
+    return (this.cells[0] as AttentionLstmCell).recurrentDropout;
+  }
+
+  get implementation(): number {
+    return (this.cells[0] as AttentionLstmCell).implementation;
   }
 }
 tf.serialization.registerClass(StackedResidualLstmCell);
