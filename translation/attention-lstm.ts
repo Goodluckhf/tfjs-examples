@@ -37,6 +37,7 @@ import { AttributeError } from '@tensorflow/tfjs-layers/dist/errors';
 import { serialization } from '@tensorflow/tfjs';
 import * as K from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
 import { LayerVariable } from '@tensorflow/tfjs-layers/dist/variables';
+import { StackedResidualLstmCell } from './stacked-residual-lstm-cell';
 
 export class AttentionLstm extends tf.layers.Layer {
   /** @nocollapse */
@@ -75,7 +76,7 @@ export class AttentionLstm extends tf.layers.Layer {
     this.stateSpec = null;
     // @ts-ignore
     this.states_ = null;
-    this.cell = new AttentionLstmCell(args);
+    this.cell = new StackedResidualLstmCell({cells: [new AttentionLstmCell(args), new AttentionLstmCell(args)]});
     this.latentDim = args.units;
     this.keptStates = [];
     this.attentionLayer = new LongauAttention({ units: args.units });
@@ -187,7 +188,8 @@ export class AttentionLstm extends tf.layers.Layer {
       throw new Error('stepInputShape');
     }
     // @ts-ignore
-    this.cell.build([null, stepInputShape[1] + this.latentDim]);
+    // костыль
+    this.cell.build([null, this.latentDim, stepInputShape[1]]);
     this.attentionLayer.build([null, null, this.latentDim]);
     this.wc.build([null, this.latentDim * 2]);
     // Set or validate stateSpec.
