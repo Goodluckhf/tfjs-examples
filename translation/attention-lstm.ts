@@ -76,7 +76,13 @@ export class AttentionLstm extends tf.layers.Layer {
     this.stateSpec = null;
     // @ts-ignore
     this.states_ = null;
-    this.cell = new StackedResidualLstmCell({cells: [new AttentionLstmCell(args), new AttentionLstmCell(args)]});
+    this.cell = new StackedResidualLstmCell({
+      cells: [
+        new AttentionLstmCell(args),
+        new AttentionLstmCell(args),
+        new AttentionLstmCell(args),
+      ],
+    });
     this.latentDim = args.units;
     this.keptStates = [];
     this.attentionLayer = new LongauAttention({ units: args.units });
@@ -497,15 +503,27 @@ export class AttentionLstm extends tf.layers.Layer {
       return [];
     }
     // Porting Note: In TypeScript, `this` is always an instance of `Layer`.
-    return [...this.cell.trainableWeights, ...this.attentionLayer.trainableWeights, ...this.wc.trainableWeights];
+    return [
+      ...this.cell.trainableWeights,
+      ...this.attentionLayer.trainableWeights,
+      ...this.wc.trainableWeights,
+    ];
   }
 
   get nonTrainableWeights(): LayerVariable[] {
     // Porting Note: In TypeScript, `this` is always an instance of `Layer`.
     if (!this.trainable) {
-      return [...this.cell.weights, ...this.attentionLayer.weights, ...this.wc.weights];
+      return [
+        ...this.cell.weights,
+        ...this.attentionLayer.weights,
+        ...this.wc.weights,
+      ];
     }
-    return [...this.cell.nonTrainableWeights, ...this.attentionLayer.nonTrainableWeights, ...this.wc.nonTrainableWeights];
+    return [
+      ...this.cell.nonTrainableWeights,
+      ...this.attentionLayer.nonTrainableWeights,
+      ...this.wc.nonTrainableWeights,
+    ];
   }
 
   setFastWeightInitDuringBuild(value: boolean) {

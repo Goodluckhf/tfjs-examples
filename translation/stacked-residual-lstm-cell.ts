@@ -1,11 +1,14 @@
-import { RNNCell, StackedRNNCellsArgs } from '@tensorflow/tfjs-layers/dist/layers/recurrent';
+import {
+  RNNCell,
+  StackedRNNCellsArgs,
+} from '@tensorflow/tfjs-layers/dist/layers/recurrent';
 import * as tf from '@tensorflow/tfjs';
 import { Kwargs } from '@tensorflow/tfjs-layers/dist/types';
-import {nameScope} from '@tensorflow/tfjs-layers/dist/common';
-import {batchGetValue} from '@tensorflow/tfjs-layers/dist/variables';
-import {deserialize} from '@tensorflow/tfjs-layers/dist/layers/serialization';
+import { nameScope } from '@tensorflow/tfjs-layers/dist/common';
+import { batchGetValue } from '@tensorflow/tfjs-layers/dist/variables';
+import { deserialize } from '@tensorflow/tfjs-layers/dist/layers/serialization';
 
-export class StackedResidualLstmCell extends RNNCell{
+export class StackedResidualLstmCell extends RNNCell {
   /** @nocollapse */
   static className = 'StackedResidualLstmCell';
   protected cells: RNNCell[];
@@ -15,13 +18,15 @@ export class StackedResidualLstmCell extends RNNCell{
     this.cells = args.cells;
   }
 
-
-  call(inputs: tf.Tensor[], kwargs: Kwargs): tf.Tensor|tf.Tensor[] {
+  call(inputs: tf.Tensor[], kwargs: Kwargs): tf.Tensor | tf.Tensor[] {
     return tf.tidy(() => {
       let [cellInputs, ...states] = inputs as tf.Tensor[];
 
       this.cells.forEach((cell, index) => {
-        const output = cell.call([cellInputs, ...states], kwargs) as tf.Tensor[];
+        const output = cell.call(
+          [cellInputs, ...states],
+          kwargs,
+        ) as tf.Tensor[];
         states = output.slice(1);
         if (index > 0) {
           cellInputs = cellInputs.add(output[0]);
@@ -52,11 +57,11 @@ export class StackedResidualLstmCell extends RNNCell{
     const cellConfigs: tf.serialization.ConfigDict[] = [];
     for (const cell of this.cells) {
       cellConfigs.push({
-        'className': cell.getClassName(),
-        'config': cell.getConfig(),
+        className: cell.getClassName(),
+        config: cell.getConfig(),
       });
     }
-    const config: tf.serialization.ConfigDict = {'cells': cellConfigs};
+    const config: tf.serialization.ConfigDict = { cells: cellConfigs };
     const baseConfig = super.getConfig();
     Object.assign(config, baseConfig);
     return config;
@@ -66,12 +71,13 @@ export class StackedResidualLstmCell extends RNNCell{
   static fromConfig<T extends tf.serialization.Serializable>(
     cls: tf.serialization.SerializableConstructor<T>,
     config: tf.serialization.ConfigDict,
-    customObjects = {} as tf.serialization.ConfigDict): T {
+    customObjects = {} as tf.serialization.ConfigDict,
+  ): T {
     const cells: RNNCell[] = [];
-    for (const cellConfig of (config['cells'] as tf.serialization.ConfigDict[])) {
+    for (const cellConfig of config['cells'] as tf.serialization.ConfigDict[]) {
       cells.push(deserialize(cellConfig, customObjects) as RNNCell);
     }
-    return new cls({cells});
+    return new cls({ cells });
   }
 
   get trainableWeights(): tf.LayerVariable[] {
@@ -116,6 +122,5 @@ export class StackedResidualLstmCell extends RNNCell{
   get stateSize() {
     return this.cells[0].stateSize;
   }
-
 }
 tf.serialization.registerClass(StackedResidualLstmCell);
