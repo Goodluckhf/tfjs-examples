@@ -33,9 +33,7 @@ export class StackedResidualLstmCell extends RNNCell {
           kwargs,
         ) as tf.Tensor[];
 
-        if (index === this.cells.length - 1) {
-          states = output.slice(1);
-        }
+        states = output.slice(1);
 
         if (index > 0) {
           cellInputs = cellInputs.add(output[0]);
