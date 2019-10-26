@@ -298,7 +298,7 @@ async function main() {
 
   // Run training.
   model.compile({
-    optimizer: tf.train.adadelta(),
+    optimizer: tf.train.adamax(),
     loss: 'sparseCategoricalCrossentropy',
     metrics: [tf.metrics.sparseCategoricalAccuracy],
   });
@@ -366,7 +366,7 @@ async function main() {
 
   await model.save(`file://${args.artifacts_dir}`, {
     trainableOnly: true,
-    includeOptimizer: true,
+    includeOptimizer: false,
   });
   await encoderModel.save(`file://${args.artifacts_dir}/encoder`, {
     trainableOnly: true,
