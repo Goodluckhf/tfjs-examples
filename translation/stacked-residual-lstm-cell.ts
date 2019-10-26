@@ -124,8 +124,8 @@ export class StackedResidualLstmCell extends RNNCell {
     return batchGetValue(weights);
   }
 
-  get stateSize() {
-    return this.cells[0].stateSize;
+  get units(): number {
+    return (this.cells[0] as AttentionLstmCell).units;
   }
 
   get activation(): Activation {
@@ -191,6 +191,10 @@ export class StackedResidualLstmCell extends RNNCell {
 
   get implementation(): number {
     return (this.cells[0] as AttentionLstmCell).implementation;
+  }
+
+  get stateSize() {
+    return this.cells[0].stateSize;
   }
 }
 tf.serialization.registerClass(StackedResidualLstmCell);
