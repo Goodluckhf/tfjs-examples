@@ -301,7 +301,7 @@ async function main() {
 
   // Run training.
   model.compile({
-    optimizer: 'adam',
+    optimizer: tf.train.adam(),
     loss: 'sparseCategoricalCrossentropy',
     metrics: [tf.metrics.sparseCategoricalAccuracy],
   });
