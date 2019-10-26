@@ -193,7 +193,7 @@ function createTrainDataset(
       inputTexts,
       targetTexts,
     ).entries() as IterableIterator<[number, [string, string]]>) {
-      yield tf.tidy(() => sequenceDecoder.getXSample(inputText, targetText));
+      yield sequenceDecoder.getXSample(inputText, targetText);
     }
   }
 
@@ -202,10 +202,7 @@ function createTrainDataset(
       inputTexts,
       targetTexts,
     ).entries() as IterableIterator<[number, [string, string]]>) {
-      yield tf.tidy(() => {
-        const y = sequenceDecoder.getYSample(targetText);
-        return y;
-      });
+      yield sequenceDecoder.getYSample(targetText);
     }
   }
 
@@ -221,7 +218,7 @@ function createTrainDataset(
       inputTextValidation,
       targetTextsValidation,
     ).entries() as IterableIterator<[number, [string, string]]>) {
-      yield tf.tidy(() => sequenceDecoder.getXSample(inputText, targetText));
+      yield sequenceDecoder.getXSample(inputText, targetText);
     }
   }
 
@@ -230,7 +227,7 @@ function createTrainDataset(
       inputTextValidation,
       targetTextsValidation,
     ).entries() as IterableIterator<[number, [string, string]]>) {
-      yield tf.tidy(() => sequenceDecoder.getYSample(targetText));
+      yield sequenceDecoder.getYSample(targetText);
     }
   }
 

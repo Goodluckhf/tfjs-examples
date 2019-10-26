@@ -24,45 +24,49 @@ export class SequenceDecoder {
   }
 
   getXSample(inputSentence: string, targetSentence: string) {
-    const encoderInputDataBuf = tf.buffer<tf.Rank.R1>([
-      this.maxEncoderSeqLength,
-    ]);
+    return tf.tidy(() => {
+      const encoderInputDataBuf = tf.buffer<tf.Rank.R1>([
+        this.maxEncoderSeqLength,
+      ]);
 
-    const decoderInputDataBuf = tf.buffer<tf.Rank.R1>([
-      this.maxDecoderSeqLength,
-    ]);
-    for (const [t, char] of inputSentence.split('').entries()) {
-      encoderInputDataBuf.set(
-        this.inputTokenIndex[char] || this.inputTokenIndex['\r'],
-        t,
-      );
-    }
+      const decoderInputDataBuf = tf.buffer<tf.Rank.R1>([
+        this.maxDecoderSeqLength,
+      ]);
+      for (const [t, char] of inputSentence.split('').entries()) {
+        encoderInputDataBuf.set(
+          this.inputTokenIndex[char] || this.inputTokenIndex['\r'],
+          t,
+        );
+      }
 
-    for (const [t, char] of targetSentence.split('').entries()) {
-      decoderInputDataBuf.set(
-        this.targetTokenIndex[char] || this.targetTokenIndex['\r'],
-        t,
-      );
-    }
+      for (const [t, char] of targetSentence.split('').entries()) {
+        decoderInputDataBuf.set(
+          this.targetTokenIndex[char] || this.targetTokenIndex['\r'],
+          t,
+        );
+      }
 
-    return {
-      encoderInputs: encoderInputDataBuf.toTensor(),
-      decoderInputs: decoderInputDataBuf.toTensor(),
-    };
+      return {
+        encoderInputs: encoderInputDataBuf.toTensor(),
+        decoderInputs: decoderInputDataBuf.toTensor(),
+      };
+    });
   }
 
   getYSample(targetSentence: string) {
-    const decoderTargetDataBuf = tf.buffer<tf.Rank.R1>([
-      this.maxDecoderSeqLength,
-    ]);
+    return tf.tidy(() => {
+      const decoderTargetDataBuf = tf.buffer<tf.Rank.R1>([
+        this.maxDecoderSeqLength,
+      ]);
 
-    for (const [t, char] of targetSentence.split('').entries()) {
-      if (t > 0) {
-        decoderTargetDataBuf.set(this.targetTokenIndex[char], t - 1);
+      for (const [t, char] of targetSentence.split('').entries()) {
+        if (t > 0) {
+          decoderTargetDataBuf.set(this.targetTokenIndex[char], t - 1);
+        }
       }
-    }
 
-    return decoderTargetDataBuf.toTensor();
+      return decoderTargetDataBuf.toTensor();
+    });
   }
 
   async decode(
