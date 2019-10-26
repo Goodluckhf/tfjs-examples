@@ -77,11 +77,7 @@ export class AttentionLstm extends tf.layers.Layer {
     // @ts-ignore
     this.states_ = null;
     this.cell = new StackedResidualLstmCell({
-      cells: [
-        new AttentionLstmCell(args),
-        new AttentionLstmCell(args),
-        new AttentionLstmCell(args),
-      ],
+      cells: [new AttentionLstmCell(args), new AttentionLstmCell(args)],
     });
     this.latentDim = args.units;
     this.keptStates = [];
