@@ -1,22 +1,28 @@
 import * as tf from '@tensorflow/tfjs-node';
 import fs from 'fs';
-import {promisify} from 'util';
+import { promisify } from 'util';
 import readline from 'readline';
-import  './attention-lstm';
-import  './attention-lstm-cell';
+import './attention-lstm';
+import './attention-lstm-cell';
 import './model/longau-attention';
 const invertKv = require('invert-kv');
 import { SequenceDecoder } from './sequence-decoder';
-
+import { Tokenizer } from './tokenizer';
 
 const readFileAsync = promisify(fs.readFile);
 (async () => {
   // @ts-ignore
-  const encoder = await tf.loadLayersModel("file://resources/encoder/model.json");
+  const encoder = await tf.loadLayersModel(
+    'file://resources/encoder/model.json',
+  );
   // @ts-ignore
-  const decoder = await tf.loadLayersModel("file://resources/decoder/model.json");
+  const decoder = await tf.loadLayersModel(
+    'file://resources/decoder/model.json',
+  );
   // @ts-ignore
-  const metadata = JSON.parse(await readFileAsync('./resources/metadata.json', {encoding:'utf-8'}));
+  const metadata = JSON.parse(
+    await readFileAsync('./resources/metadata.json', { encoding: 'utf-8' }),
+  );
 
   const sequenceDecoder = new SequenceDecoder({
     reverseTargetCharIndex: invertKv(metadata.target_token_index) as {
@@ -38,16 +44,26 @@ const readFileAsync = promisify(fs.readFile);
       return;
     }
     if (input.length > metadata.max_encoder_seq_length) {
-      console.warn('input.length > metadata.max_encoder_seq_length', metadata.max_encoder_seq_length);
+      console.warn(
+        'input.length > metadata.max_encoder_seq_length',
+        metadata.max_encoder_seq_length,
+      );
     }
 
+    const tokenizer = new Tokenizer([]);
+
     const { encoderInputs: x } = sequenceDecoder.getXSample(
-      input.toLowerCase(),
-      '',
+      tokenizer.tokenize(input.toLowerCase()),
+      [],
     );
 
-    const answer = await sequenceDecoder.decode(x.expandDims(), encoder, decoder, metadata.target_token_index['\t']);
-    console.log(`B: ${answer.trim().replace(/[\r\n\t\s\v]/, '')}`);
+    const answer = await sequenceDecoder.decode(
+      x.expandDims(),
+      encoder,
+      decoder,
+      metadata.target_token_index['\t'],
+    );
+    console.log(`B: ${answer.join(' ')}`);
   });
   console.log('Ready');
 })();
