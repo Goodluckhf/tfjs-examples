@@ -7,7 +7,7 @@ export class Tokenizer {
 
   tokenize(sentence: string): string[] {
     const tokens = sentence
-      .replace(/([^a-zа-яë0-9<>])/gi, ' $&')
+      .replace(/([^a-zа-яё0-9<>])/gi, ' $&')
       .replace(/[ ]+/g, ' ')
       .split(' ');
 
