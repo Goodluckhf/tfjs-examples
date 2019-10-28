@@ -1,4 +1,5 @@
 import * as tf from '@tensorflow/tfjs';
+import { END_OF_SENTENCE, UNKNOWN } from './constants';
 
 export type SequenceDecoderArgs = {
   inputTokenIndex: { [char: string]: number };
@@ -23,7 +24,7 @@ export class SequenceDecoder {
     this.maxDecoderSeqLength = config.maxDecoderSeqLength;
   }
 
-  getXSample(inputSentence: string, targetSentence: string) {
+  getXSample(inputSentence: string[], targetSentence: string[]) {
     return tf.tidy(() => {
       const encoderInputDataBuf = tf.buffer<tf.Rank.R1>([
         this.maxEncoderSeqLength,
@@ -32,16 +33,16 @@ export class SequenceDecoder {
       const decoderInputDataBuf = tf.buffer<tf.Rank.R1>([
         this.maxDecoderSeqLength,
       ]);
-      for (const [t, char] of inputSentence.split('').entries()) {
+      for (const [t, char] of inputSentence.entries()) {
         encoderInputDataBuf.set(
-          this.inputTokenIndex[char] || this.inputTokenIndex['\r'],
+          this.inputTokenIndex[char] || this.inputTokenIndex[UNKNOWN],
           t,
         );
       }
 
-      for (const [t, char] of targetSentence.split('').entries()) {
+      for (const [t, char] of targetSentence.entries()) {
         decoderInputDataBuf.set(
-          this.targetTokenIndex[char] || this.targetTokenIndex['\r'],
+          this.targetTokenIndex[char] || this.targetTokenIndex[UNKNOWN],
           t,
         );
       }
@@ -53,13 +54,13 @@ export class SequenceDecoder {
     });
   }
 
-  getYSample(targetSentence: string) {
+  getYSample(targetSentence: string[]) {
     return tf.tidy(() => {
       const decoderTargetDataBuf = tf.buffer<tf.Rank.R1>([
         this.maxDecoderSeqLength,
       ]);
 
-      for (const [t, char] of targetSentence.split('').entries()) {
+      for (const [t, char] of targetSentence.entries()) {
         if (t > 0) {
           decoderTargetDataBuf.set(this.targetTokenIndex[char], t - 1);
         }
@@ -89,7 +90,7 @@ export class SequenceDecoder {
     // Sampling loop for a batch of sequences
     // (to simplify, here we assume a batch of size 1).
     let stopCondition = false;
-    let decodedSentence = '';
+    let decodedSentence: string[] = [];
     while (!stopCondition) {
       const [outputTokens, h, c] = decoderModel.predict(
         [targetSeq.toTensor(), sequences, ...statesValue],
@@ -108,12 +109,12 @@ export class SequenceDecoder {
         .array()) as number;
 
       const sampledChar = this.reverseTargetCharIndex[sampledTokenIndex];
-      decodedSentence += sampledChar;
+      decodedSentence.push(sampledChar);
 
       // Exit condition: either hit max length
       // or find stop character.
       if (
-        sampledChar === '\n' ||
+        sampledChar === END_OF_SENTENCE ||
         decodedSentence.length > this.maxDecoderSeqLength
       ) {
         stopCondition = true;

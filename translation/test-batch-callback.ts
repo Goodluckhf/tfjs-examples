@@ -4,8 +4,8 @@ import { SequenceDecoder } from './sequence-decoder';
 
 export type CallbackArgs = {
   everyEpoch: number;
-  testInputData: string[];
-  testTargetData: string[];
+  testInputData: string[][];
+  testTargetData: string[][];
   examplesLength: number;
   targetBeginIndex: number;
 };
@@ -17,8 +17,8 @@ export class TestBatchCallback extends Callback {
   private readonly decoderModel: tf.LayersModel;
   private readonly examplesLength: number;
   private readonly targetBeginIndex: number;
-  private readonly testInputData: string[];
-  private readonly testTargetData: string[];
+  private readonly testInputData: string[][];
+  private readonly testTargetData: string[][];
 
   constructor(
     sequenceDecoder: SequenceDecoder,
@@ -68,9 +68,9 @@ export class TestBatchCallback extends Callback {
       );
 
       console.log('-');
-      console.log('Input sentence:', inputSentence.trim());
-      console.log('Target sentence:', targetSentence.trim());
-      console.log('Decoded sentence:', decodedSentence.trim());
+      console.log('Input sentence:', inputSentence.join(' '));
+      console.log('Target sentence:', targetSentence.join(' '));
+      console.log('Decoded sentence:', decodedSentence.join(' '));
     }
   }
 }

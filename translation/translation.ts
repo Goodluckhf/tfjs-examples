@@ -45,24 +45,22 @@ import {
 } from './model/seq2seq';
 import { SequenceDecoder } from './sequence-decoder';
 import { TestBatchCallback } from './test-batch-callback';
+import { Tokenizer } from './tokenizer';
+import { END_OF_SENTENCE, PAD, START_OF_SENTENCE, UNKNOWN } from './constants';
 
 let args = {} as any;
 
-async function readData(dataFile: string, maxLength: number) {
-  // Vectorize the data.
-  const inputTexts: string[] = [];
-  const targetTexts: string[] = [];
+async function readData(dataFile: string) {
+  const inputTexts: string[][] = [];
+  const targetTexts: string[][] = [];
 
-  const inputCharacters = new Set<string>([
-    '\v', // PAD
-    '\r', // UNK
-  ]);
+  const inputTokenizer = new Tokenizer([PAD, UNKNOWN]);
 
-  const targetCharacters = new Set<string>([
-    '\v', // PAD
-    '\r', // UNK
-    '\t', // SOS
-    '\n', // EOS
+  const outputTokenizer = new Tokenizer([
+    PAD,
+    UNKNOWN,
+    START_OF_SENTENCE,
+    END_OF_SENTENCE,
   ]);
 
   const fileStream = fs.createReadStream(dataFile);
@@ -80,44 +78,25 @@ async function readData(dataFile: string, maxLength: number) {
     }
 
     let [inputText, targetText] = line.split('\t');
-    inputText = inputText
-      .slice(0, maxLength)
-      .toLowerCase()
-      .trim();
-    // We use "tab" as the "start sequence" character for the targets, and "\n"
-    // as "end sequence" character.
-    targetText =
-      '\t' +
-      targetText
-        .slice(0, maxLength)
-        .toLowerCase()
-        .trim() +
-      '\n';
+    inputText = inputText.toLowerCase().trim();
 
-    inputTexts.push(inputText.toLowerCase());
-    targetTexts.push(targetText.toLowerCase());
+    inputTexts.push(inputTokenizer.tokenize(inputText));
 
-    for (const char of inputText) {
-      if (!inputCharacters.has(char)) {
-        inputCharacters.add(char);
-      }
-    }
-    for (const char of targetText) {
-      if (!targetCharacters.has(char)) {
-        targetCharacters.add(char);
-      }
-    }
+    targetTexts.push([
+      START_OF_SENTENCE,
+      ...outputTokenizer.tokenize(targetText.toLowerCase().trim()),
+      END_OF_SENTENCE,
+    ]);
   });
 
   await new Promise(r => rl.on('close', r));
 
-  const inputCharacterList = [...inputCharacters];
-  const targetCharacterList = [...targetCharacters];
+  const inputTokenList = [...inputTokenizer.uniqueTokens];
+  const targetTokenList = [...outputTokenizer.uniqueTokens];
 
-  const numEncoderTokens = inputCharacterList.length;
-  const numDecoderTokens = targetCharacterList.length;
+  const numEncoderTokens = inputTokenizer.uniqueTokens.size;
+  const numDecoderTokens = outputTokenizer.uniqueTokens.size;
 
-  // Math.max() does not work with very large arrays because of the stack limitation
   const maxEncoderSeqLength = inputTexts
     .map(text => text.length)
     .reduceRight((prev, curr) => (curr > prev ? curr : prev), 0);
@@ -131,11 +110,11 @@ async function readData(dataFile: string, maxLength: number) {
   console.log('Max sequence length for inputs:', maxEncoderSeqLength);
   console.log('Max sequence length for outputs:', maxDecoderSeqLength);
 
-  const inputTokenIndex = inputCharacterList.reduce(
+  const inputTokenIndex = inputTokenList.reduce(
     (prev, curr, idx) => ((prev[curr] = idx), prev),
     {} as { [char: string]: number },
   );
-  const targetTokenIndex = targetCharacterList.reduce(
+  const targetTokenIndex = targetTokenList.reduce(
     (prev, curr, idx) => ((prev[curr] = idx), prev),
     {} as { [char: string]: number },
   );
@@ -177,8 +156,8 @@ async function readData(dataFile: string, maxLength: number) {
 }
 
 function createTrainDataset(
-  inputTexts: string[],
-  targetTexts: string[],
+  inputTexts: string[][],
+  targetTexts: string[][],
   sequenceDecoder: SequenceDecoder,
 ) {
   const inputTextValidation = inputTexts.splice(
@@ -192,7 +171,7 @@ function createTrainDataset(
     for (const [, [inputText, targetText]] of zip(
       inputTexts,
       targetTexts,
-    ).entries() as IterableIterator<[number, [string, string]]>) {
+    ).entries() as IterableIterator<[number, [string[], string[]]]>) {
       yield sequenceDecoder.getXSample(inputText, targetText);
     }
   }
@@ -201,7 +180,7 @@ function createTrainDataset(
     for (const [, [, targetText]] of zip(
       inputTexts,
       targetTexts,
-    ).entries() as IterableIterator<[number, [string, string]]>) {
+    ).entries() as IterableIterator<[number, [string[], string[]]]>) {
       yield sequenceDecoder.getYSample(targetText);
     }
   }
@@ -217,7 +196,7 @@ function createTrainDataset(
     for (const [, [inputText, targetText]] of zip(
       inputTextValidation,
       targetTextsValidation,
-    ).entries() as IterableIterator<[number, [string, string]]>) {
+    ).entries() as IterableIterator<[number, [string[], string[]]]>) {
       yield sequenceDecoder.getXSample(inputText, targetText);
     }
   }
@@ -226,7 +205,7 @@ function createTrainDataset(
     for (const [, [, targetText]] of zip(
       inputTextValidation,
       targetTextsValidation,
-    ).entries() as IterableIterator<[number, [string, string]]>) {
+    ).entries() as IterableIterator<[number, [string[], string[]]]>) {
       yield sequenceDecoder.getYSample(targetText);
     }
   }
@@ -263,7 +242,7 @@ async function main() {
     targetTexts,
     inputTokenIndex,
     reverseTargetCharIndex,
-  } = await readData(args.data_path, args.max_sequence_length);
+  } = await readData(args.data_path);
 
   const sequenceDecoder = new SequenceDecoder({
     inputTokenIndex,
@@ -349,7 +328,7 @@ async function main() {
         {
           everyEpoch: args.test_every_epoch,
           examplesLength: 1,
-          targetBeginIndex: targetTokenIndex['\t'],
+          targetBeginIndex: targetTokenIndex[START_OF_SENTENCE],
           testTargetData: targetTexts,
           testInputData: inputTexts,
         },
@@ -403,9 +382,9 @@ async function main() {
     );
 
     console.log('-');
-    console.log('Input sentence:', inputSentence.trim());
-    console.log('Target sentence:', targetSentence.trim());
-    console.log('Decoded sentence:', decodedSentence.trim());
+    console.log('Input sentence:', inputSentence.join(' '));
+    console.log('Target sentence:', targetSentence.join(' '));
+    console.log('Decoded sentence:', decodedSentence.join(' '));
   }
 }
 
