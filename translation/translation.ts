@@ -358,7 +358,7 @@ async function main() {
   // Reverse-lookup token index to decode sequences back to
   // something readable.
 
-  const targetBeginIndex = targetTokenIndex['\t'];
+  const targetBeginIndex = targetTokenIndex[START_OF_SENTENCE];
 
   for (let seqIndex = 0; seqIndex < args.num_test_sentences; seqIndex++) {
     const sampleIndex = Math.floor(Math.random() * inputTexts.length);
