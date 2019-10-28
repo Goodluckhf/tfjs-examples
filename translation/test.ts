@@ -8,6 +8,7 @@ import './model/longau-attention';
 const invertKv = require('invert-kv');
 import { SequenceDecoder } from './sequence-decoder';
 import { Tokenizer } from './tokenizer';
+import { START_OF_SENTENCE } from './constants';
 
 const readFileAsync = promisify(fs.readFile);
 (async () => {
@@ -61,7 +62,7 @@ const readFileAsync = promisify(fs.readFile);
       x.expandDims(),
       encoder,
       decoder,
-      metadata.target_token_index['\t'],
+      metadata.target_token_index[START_OF_SENTENCE],
     );
     console.log(`B: ${answer.join(' ')}`);
   });
