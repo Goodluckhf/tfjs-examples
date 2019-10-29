@@ -21,7 +21,7 @@ export class Tokenizer {
     [...freq.entries()]
       .reduce(
         (set, [word, freq]) => {
-          if (freq < count) {
+          if (freq <= count) {
             set.add(word);
           }
           return set;
