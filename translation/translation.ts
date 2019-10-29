@@ -90,7 +90,8 @@ async function readData(dataFile: string) {
   });
 
   await new Promise(r => rl.on('close', r));
-
+  const allNumEncoderTokens = inputTokenizer.uniqueTokens.size;
+  inputTokenizer.removeLowFrequency(inputTexts, 2);
   const inputTokenList = [...inputTokenizer.uniqueTokens];
   const targetTokenList = [...outputTokenizer.uniqueTokens];
 
@@ -105,6 +106,7 @@ async function readData(dataFile: string) {
     .reduceRight((prev, curr) => (curr > prev ? curr : prev), 0);
 
   console.log('Number of samples:', inputTexts.length);
+  console.log('Number of all unique input tokens:', allNumEncoderTokens);
   console.log('Number of unique input tokens:', numEncoderTokens);
   console.log('Number of unique output tokens:', numDecoderTokens);
   console.log('Max sequence length for inputs:', maxEncoderSeqLength);
