@@ -6,17 +6,17 @@ export class Tokenizer {
   }
 
   removeLowFrequency(sentences: string[][], count: number) {
-    const freq = sentences
-      .reduce((arr, sentence) => [...arr, ...sentence], [])
-      .reduce((freq, word) => {
+    const freq = sentences.reduce((freq, sentence) => {
+      sentence.forEach(word => {
         if (freq.has(word)) {
           freq.set(word, freq.get(word) + 1);
-          return freq;
+          return;
         }
 
         freq.set(word, 1);
-        return freq;
-      }, new Map());
+      });
+      return freq;
+    }, new Map());
 
     [...freq.entries()]
       .reduce(
