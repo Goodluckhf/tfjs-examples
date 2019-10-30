@@ -224,6 +224,8 @@ function createTrainDataset(
   return {
     validDs,
     trainDs,
+    inputTextValidation,
+    targetTextsValidation,
   };
 }
 
@@ -257,11 +259,12 @@ async function main() {
     targetTokenIndex,
   });
 
-  const { validDs, trainDs } = createTrainDataset(
-    inputTexts,
-    targetTexts,
-    sequenceDecoder,
-  );
+  const {
+    validDs,
+    trainDs,
+    targetTextsValidation,
+    inputTextValidation,
+  } = createTrainDataset(inputTexts, targetTexts, sequenceDecoder);
 
   const seq2seq = new Seq2seq({
     embeddingDim: args.embedding_dim,
@@ -332,10 +335,12 @@ async function main() {
         decoderInferenceModel,
         {
           everyEpoch: args.test_every_epoch,
-          examplesLength: 1,
+          examplesLength: 2,
           targetBeginIndex: targetTokenIndex[START_OF_SENTENCE],
           testTargetData: targetTexts,
           testInputData: inputTexts,
+          validationInputData: inputTextValidation,
+          validationTargetData: targetTextsValidation,
         },
       ),
     ],

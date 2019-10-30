@@ -6,6 +6,8 @@ export type CallbackArgs = {
   everyEpoch: number;
   testInputData: string[][];
   testTargetData: string[][];
+  validationInputData: string[][];
+  validationTargetData: string[][];
   examplesLength: number;
   targetBeginIndex: number;
 };
@@ -19,6 +21,8 @@ export class TestBatchCallback extends Callback {
   private readonly targetBeginIndex: number;
   private readonly testInputData: string[][];
   private readonly testTargetData: string[][];
+  private readonly validationInputData: string[][];
+  private readonly validationTargetData: string[][];
 
   constructor(
     sequenceDecoder: SequenceDecoder,
@@ -29,6 +33,8 @@ export class TestBatchCallback extends Callback {
     super();
     this.sequenceDecoder = sequenceDecoder;
     this.targetBeginIndex = config.targetBeginIndex;
+    this.validationInputData = config.validationInputData;
+    this.validationTargetData = config.validationTargetData;
     this.testInputData = config.testInputData;
     this.testTargetData = config.testTargetData;
     this.everyEpoch = config.everyEpoch;
@@ -42,7 +48,7 @@ export class TestBatchCallback extends Callback {
       return;
     }
 
-    console.warn('Testing values...');
+    console.warn('Testing values from TRAIN...');
     for (let i = 0; i < this.examplesLength; i++) {
       const sampleIndex = Math.floor(Math.random() * this.testInputData.length);
 
@@ -51,6 +57,39 @@ export class TestBatchCallback extends Callback {
         sampleIndex + 1,
       );
       const [targetSentence] = this.testTargetData.slice(
+        sampleIndex,
+        sampleIndex + 1,
+      );
+      const { encoderInputs: x } = this.sequenceDecoder.getXSample(
+        inputSentence,
+        targetSentence,
+      );
+
+      // Array to string
+      const decodedSentence = await this.sequenceDecoder.decode(
+        x.expandDims(),
+        this.encoderModel,
+        this.decoderModel,
+        this.targetBeginIndex,
+      );
+
+      console.log('-');
+      console.log('Input sentence:', inputSentence.join(' '));
+      console.log('Target sentence:', targetSentence.join(' '));
+      console.log('Decoded sentence:', decodedSentence.join(' '));
+    }
+    console.log('------');
+    console.warn('Testing values from VALIDATION...');
+    for (let i = 0; i < this.examplesLength; i++) {
+      const sampleIndex = Math.floor(
+        Math.random() * this.validationInputData.length,
+      );
+
+      const [inputSentence] = this.validationInputData.slice(
+        sampleIndex,
+        sampleIndex + 1,
+      );
+      const [targetSentence] = this.validationTargetData.slice(
         sampleIndex,
         sampleIndex + 1,
       );
