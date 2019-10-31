@@ -164,7 +164,6 @@ export class Seq2seq {
       ...encoderStates,
     ]) as tf.SymbolicTensor[];
 
-
     const softmax = tf.layers.dense({
       units: this.numDecoderTokens,
       activation: 'softmax',
