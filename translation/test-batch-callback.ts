@@ -74,9 +74,9 @@ export class TestBatchCallback extends Callback {
       );
 
       console.log('-');
-      console.log('Input sentence:', inputSentence);
-      console.log('Target sentence:', targetSentence);
-      console.log('Decoded sentence:', decodedSentence);
+      console.log('Input sentence:', inputSentence.trim());
+      console.log('Target sentence:', targetSentence.trim());
+      console.log('Decoded sentence:', decodedSentence.trim());
     }
     console.log('------');
     console.warn('Testing values from VALIDATION...');
